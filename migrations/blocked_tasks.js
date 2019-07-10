@@ -1,5 +1,6 @@
 // constants
 finishedStatuses = ["success","failed"]
+startedStatuses = ["started", "dispatched"]
 
 function taskIsBlocked(task) {
     for(dep of task.depends_on) {
@@ -55,7 +56,9 @@ function completeVersions(tasks) {
 function migrate(sleepMilliseconds, limit) {
     var loops = 0
     while(true) {
-        var tasks = db.tasks.find({"status":{"$in": ["undispatched", "inactive"]}, "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}}, {"depends_on":1, "version":1}).limit(limit).toArray()
+        var oneWeekAgo = new Date()
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
+        var tasks = db.tasks.find({"status":{"$in": ["undispatched", "inactive"]}, "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}, "injest_time": {"$lte": oneWeekAgo}}, {"depends_on":1, "version":1}).limit(limit).toArray()
         tasks = completeVersions(tasks)
         if (tasks.length == 0) {
             printjson("finished")
@@ -85,6 +88,9 @@ function migrate(sleepMilliseconds, limit) {
                     } else {
                         dependsOn[j].unattainable = false
                     }
+                } else if (startedStatuses.includes(depTask.status)) {
+                    taskUpdated = true
+                    dependsOn[j].unattainable = false
                 } else if (dependsOn[j].status != "*" && taskIsBlocked(depTask)) {
                     taskUpdated = true
                     dependsOn[j].unattainable = true
