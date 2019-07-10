@@ -42,7 +42,7 @@ function completeVersions(tasks) {
             versionIds.add(task.version)
         }
     }
-    return db.tasks.find({"version": {"$in": Array.from(versionIds)}, "status":"undispatched", "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}}, {"depends_on":1}).toArray()
+    return db.tasks.find({"version": {"$in": Array.from(versionIds)}, "status":{"$in": ["undispatched", "inactive"]}, "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}}, {"depends_on":1}).toArray()
 }
 
 //
@@ -55,12 +55,12 @@ function completeVersions(tasks) {
 function migrate(sleepMilliseconds, limit) {
     var loops = 0
     while(true) {
-        var tasks = db.tasks.find({"status":"undispatched", "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}}, {"depends_on":1, "version":1}).limit(limit).toArray()
+        var tasks = db.tasks.find({"status":{"$in": ["undispatched", "inactive"]}, "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}}, {"depends_on":1, "version":1}).limit(limit).toArray()
         tasks = completeVersions(tasks)
         if (tasks.length == 0) {
             break
         }
-        printjson(loops++)
+        printjson("Loop number: " + loops++)
 
         var tasksUpdated = 0
         for (i=0; i < tasks.length; i++) {
@@ -100,7 +100,7 @@ function migrate(sleepMilliseconds, limit) {
         if(tasksUpdated == 0) {
             break
         }
-        printjson(tasksUpdated)
+        printjson("Tasks updated:" + tasksUpdated)
         sleep(sleepMilliseconds)
     }
 }
