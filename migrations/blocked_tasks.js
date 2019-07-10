@@ -58,6 +58,7 @@ function migrate(sleepMilliseconds, limit) {
         var tasks = db.tasks.find({"status":{"$in": ["undispatched", "inactive"]}, "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}}, {"depends_on":1, "version":1}).limit(limit).toArray()
         tasks = completeVersions(tasks)
         if (tasks.length == 0) {
+            printjson("finished")
             break
         }
         printjson("Loop number: " + loops++)
@@ -71,12 +72,12 @@ function migrate(sleepMilliseconds, limit) {
                 if(dependsOn[j].unattainable != null) {
                     continue
                 }
-                
-                if (!(dependsOn[j]._id in depTasksMap)) {
-                    break
-                }
+
                 depTask = depTasksMap[dependsOn[j]._id]
-                if (finishedStatuses.includes(depTask.status)) {
+                if (!(dependsOn[j]._id in depTasksMap)) {
+                    taskUpdated = true
+                    dependsOn[j].unattainable = true
+                } else if (finishedStatuses.includes(depTask.status)) {
                     taskUpdated = true
                     // 1st degree blocked
                     if(dependsOn[j].status != "*" && depTask.status != dependsOn[j].status) {
@@ -98,6 +99,7 @@ function migrate(sleepMilliseconds, limit) {
             }
         }
         if(tasksUpdated == 0) {
+            printjson("no tasks updated")
             break
         }
         printjson("Tasks updated:" + tasksUpdated)
