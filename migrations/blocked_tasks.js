@@ -77,7 +77,11 @@ function migrate(sleepMilliseconds, limit) {
                 }
 
                 depTask = depTasksMap[dependsOn[j]._id]
-                if (!(dependsOn[j]._id in depTasksMap)) {
+                
+                if (dependsOn[j]._id == tasks[i]._id) {
+                    taskUpdated = true
+                    dependsOn[j].unattainable = true
+                } else if (!(dependsOn[j]._id in depTasksMap)) {
                     taskUpdated = true
                     dependsOn[j].unattainable = true
                 } else if (finishedStatuses.includes(depTask.status)) {
