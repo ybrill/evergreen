@@ -43,7 +43,7 @@ function completeVersions(tasks) {
             versionIds.add(task.version)
         }
     }
-    return db.tasks.find({"version": {"$in": Array.from(versionIds)}, "status":{"$in": ["undispatched", "inactive"]}, "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}}, {"depends_on":1}).toArray()
+    return db.tasks.find({"version": {"$in": Array.from(versionIds)}, "status":{"$in": ["undispatched", "inactive", ""]}, "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}}, {"depends_on":1}).toArray()
 }
 
 //
@@ -59,7 +59,7 @@ function completeVersions(tasks) {
 function migrate(sleepMilliseconds, limit, latestDate) {
     var loops = 0
     while(true) {
-        var tasks = db.tasks.find({"status":{"$in": ["undispatched", "inactive"]}, "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}, "injest_time": {"$lte": latestDate}}, {"depends_on":1, "version":1}).limit(limit).toArray()
+        var tasks = db.tasks.find({"status":{"$in": ["undispatched", "inactive", ""]}, "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}, "injest_time": {"$lte": latestDate}}, {"depends_on":1, "version":1}).limit(limit).toArray()
         tasks = completeVersions(tasks)
         if (tasks.length == 0) {
             printjson("finished")
