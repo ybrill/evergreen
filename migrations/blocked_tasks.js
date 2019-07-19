@@ -51,14 +51,15 @@ function completeVersions(tasks) {
 //
 // sleepMilliseconds = 100
 // limit = 1000
-// migrate(sleepMilliseconds, limit)
+// oneWeekAgo = new Date()
+// oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
+// migrate(sleepMilliseconds, limit, oneWeekAgo)
+//
 
-function migrate(sleepMilliseconds, limit) {
+function migrate(sleepMilliseconds, limit, latestDate) {
     var loops = 0
-    var oneWeekAgo = new Date()
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7)
     while(true) {
-        var tasks = db.tasks.find({"status":{"$in": ["undispatched", "inactive"]}, "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}, "injest_time": {"$lte": oneWeekAgo}}, {"depends_on":1, "version":1}).limit(limit).toArray()
+        var tasks = db.tasks.find({"status":{"$in": ["undispatched", "inactive"]}, "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}, "injest_time": {"$lte": latestDate}}, {"depends_on":1, "version":1}).limit(limit).toArray()
         tasks = completeVersions(tasks)
         if (tasks.length == 0) {
             printjson("finished")
