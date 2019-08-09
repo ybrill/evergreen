@@ -59,8 +59,8 @@ function completeVersions(tasks) {
 function migrate(sleepMilliseconds, limit, latestDate) {
     var loops = 0
     while(true) {
-        var tasks = db.tasks.find({"status":{"$in": ["undispatched", "inactive", ""]}, "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}, "injest_time": {"$lte": latestDate}}, {"depends_on":1, "version":1}).limit(limit).toArray()
-        tasks = completeVersions(tasks)
+        var origTasks = db.tasks.find({"status":{"$in": ["undispatched", "inactive", ""]}, "depends_on.status": {"$in": ["success", "failed", "", "*"]}, "depends_on": {"$elemMatch":{"unattainable": {"$exists": false}}}, "injest_time": {"$lte": latestDate}}, {"depends_on":1, "version":1}).limit(limit).toArray()
+        tasks = completeVersions(origTasks)
         if (tasks.length == 0) {
             printjson("finished")
             break
@@ -111,6 +111,7 @@ function migrate(sleepMilliseconds, limit, latestDate) {
         }
         if(tasksUpdated == 0) {
             printjson("no tasks updated")
+            printjson(origTasks.map(task => task._id))
             break
         }
         printjson("Tasks updated:" + tasksUpdated)
