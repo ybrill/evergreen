@@ -11,9 +11,9 @@ import (
 	"github.com/evergreen-ci/evergreen/model/patch"
 	"github.com/evergreen-ci/evergreen/model/user"
 	"github.com/evergreen-ci/gimlet"
+	"github.com/evergreen-ci/utility"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.mongodb.org/mongo-driver/bson"
 	mgobson "gopkg.in/mgo.v2/bson"
 )
 
@@ -25,8 +25,8 @@ func TestFindOneProjectRef(t *testing.T) {
 	projectRef := &ProjectRef{
 		Owner:     "mongodb",
 		Repo:      "mci",
-		Branch:    "master",
-		Enabled:   true,
+		Branch:    "main",
+		Enabled:   utility.TruePtr(),
 		BatchTime: 10,
 		Id:        "ident",
 	}
@@ -38,8 +38,8 @@ func TestFindOneProjectRef(t *testing.T) {
 
 	assert.Equal(projectRefFromDB.Owner, "mongodb")
 	assert.Equal(projectRefFromDB.Repo, "mci")
-	assert.Equal(projectRefFromDB.Branch, "master")
-	assert.Equal(projectRefFromDB.Enabled, true)
+	assert.Equal(projectRefFromDB.Branch, "main")
+	assert.True(projectRefFromDB.IsEnabled())
 	assert.Equal(projectRefFromDB.BatchTime, 10)
 	assert.Equal(projectRefFromDB.Id, "ident")
 	assert.Equal(projectRefFromDB.DefaultLogger, "buildlogger")
@@ -56,28 +56,38 @@ func TestFindMergedProjectRef(t *testing.T) {
 		Id:                    "ident",
 		Admins:                []string{"john.smith", "john.doe"},
 		UseRepoSettings:       true,
-		Enabled:               false,
-		PatchingDisabled:      false,
-		RepotrackerDisabled:   true,
+		Enabled:               utility.FalsePtr(),
+		PatchingDisabled:      utility.FalsePtr(),
+		RepotrackerDisabled:   utility.TruePtr(),
+		PRTestingEnabled:      nil,
+		GitTagVersionsEnabled: nil,
 		GitTagAuthorizedTeams: []string{},
 		PatchTriggerAliases: []patch.PatchTriggerDefinition{
 			{ChildProject: "a different branch"},
 		},
+		CommitQueue:       CommitQueueParams{Enabled: nil, Message: "using repo commit queue"},
+		WorkstationConfig: WorkstationConfig{GitClone: true},
+		TaskSync:          TaskSyncOptions{ConfigEnabled: utility.FalsePtr()},
 	}
 	assert.NoError(t, projectRef.Insert())
 	repoRef := &RepoRef{ProjectRef{
 		Id:                    "mongodb_mci",
 		Repo:                  "mci",
-		Branch:                "master",
+		Branch:                "main",
 		SpawnHostScriptPath:   "my-path",
 		Admins:                []string{"john.liu"},
-		TaskSync:              TaskSyncOptions{ConfigEnabled: true},
-		Enabled:               true,
-		PatchingDisabled:      true,
+		Enabled:               utility.TruePtr(),
+		PatchingDisabled:      nil,
+		GitTagVersionsEnabled: utility.FalsePtr(),
+		PRTestingEnabled:      utility.TruePtr(),
 		GitTagAuthorizedTeams: []string{"my team"},
+		GitTagAuthorizedUsers: []string{"my user"},
 		PatchTriggerAliases: []patch.PatchTriggerDefinition{
 			{Alias: "global patch trigger"},
 		},
+		TaskSync:          TaskSyncOptions{ConfigEnabled: utility.TruePtr(), PatchEnabled: utility.TruePtr()},
+		CommitQueue:       CommitQueueParams{Enabled: utility.TruePtr()},
+		WorkstationConfig: WorkstationConfig{SetupCommands: []WorkstationSetupCommand{{Command: "my-command"}}},
 	}}
 	assert.NoError(t, repoRef.Insert())
 
@@ -89,17 +99,27 @@ func TestFindMergedProjectRef(t *testing.T) {
 	assert.Contains(t, mergedProject.Admins, "john.smith")
 	assert.Contains(t, mergedProject.Admins, "john.doe")
 	assert.NotContains(t, mergedProject.Admins, "john.liu")
-	assert.False(t, mergedProject.Enabled)
-	assert.True(t, mergedProject.PatchingDisabled)
+	assert.False(t, *mergedProject.Enabled)
+	assert.False(t, mergedProject.IsPatchingDisabled())
 	assert.True(t, mergedProject.UseRepoSettings)
-	assert.True(t, mergedProject.RepotrackerDisabled)
-	assert.False(t, mergedProject.GithubChecksEnabled)
+	assert.True(t, mergedProject.IsRepotrackerDisabled())
+	assert.False(t, mergedProject.IsGitTagVersionsEnabled())
+	assert.False(t, mergedProject.IsGithubChecksEnabled())
+	assert.True(t, mergedProject.IsPRTestingEnabled())
 	assert.Equal(t, "my-path", mergedProject.SpawnHostScriptPath)
-	assert.True(t, mergedProject.TaskSync.ConfigEnabled)
-	assert.Len(t, mergedProject.GitTagAuthorizedTeams, 1)
+	assert.False(t, utility.FromBoolPtr(mergedProject.TaskSync.ConfigEnabled))
+	assert.True(t, utility.FromBoolPtr(mergedProject.TaskSync.PatchEnabled))
+	assert.Len(t, mergedProject.GitTagAuthorizedTeams, 0) // empty lists take precedent
+	assert.Len(t, mergedProject.GitTagAuthorizedUsers, 1)
 	require.Len(t, mergedProject.PatchTriggerAliases, 1)
 	assert.Empty(t, mergedProject.PatchTriggerAliases[0].Alias)
 	assert.Equal(t, "a different branch", mergedProject.PatchTriggerAliases[0].ChildProject)
+
+	assert.True(t, mergedProject.CommitQueue.IsEnabled())
+	assert.Equal(t, "using repo commit queue", mergedProject.CommitQueue.Message)
+
+	assert.True(t, mergedProject.WorkstationConfig.GitClone)
+	assert.Len(t, mergedProject.WorkstationConfig.SetupCommands, 1)
 }
 
 func TestGetBatchTimeDoesNotExceedMaxBatchTime(t *testing.T) {
@@ -108,8 +128,8 @@ func TestGetBatchTimeDoesNotExceedMaxBatchTime(t *testing.T) {
 	projectRef := &ProjectRef{
 		Owner:     "mongodb",
 		Repo:      "mci",
-		Branch:    "master",
-		Enabled:   true,
+		Branch:    "main",
+		Enabled:   utility.TruePtr(),
 		BatchTime: maxBatchTime + 1,
 		Id:        "ident",
 	}
@@ -248,31 +268,31 @@ func TestFindProjectRefsByRepoAndBranch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	assert.NoError(db.Clear(ProjectRefCollection))
+	assert.NoError(db.ClearCollections(ProjectRefCollection, RepoRefCollection))
 
-	projectRefs, err := FindMergedProjectRefsByRepoAndBranch("mongodb", "mci", "master")
+	projectRefs, err := FindMergedProjectRefsByRepoAndBranch("mongodb", "mci", "main")
 	assert.NoError(err)
 	assert.Empty(projectRefs)
 
 	projectRef := &ProjectRef{
 		Owner:            "mongodb",
 		Repo:             "mci",
-		Branch:           "master",
-		Enabled:          false,
+		Branch:           "main",
+		Enabled:          utility.FalsePtr(),
 		BatchTime:        10,
 		Id:               "iden_",
-		PRTestingEnabled: true,
+		PRTestingEnabled: utility.TruePtr(),
 	}
 	assert.NoError(projectRef.Insert())
-	projectRefs, err = FindMergedProjectRefsByRepoAndBranch("mongodb", "mci", "master")
+	projectRefs, err = FindMergedProjectRefsByRepoAndBranch("mongodb", "mci", "main")
 	assert.NoError(err)
 	assert.Empty(projectRefs)
 
 	projectRef.Id = "ident"
-	projectRef.Enabled = true
+	projectRef.Enabled = utility.TruePtr()
 	assert.NoError(projectRef.Insert())
 
-	projectRefs, err = FindMergedProjectRefsByRepoAndBranch("mongodb", "mci", "master")
+	projectRefs, err = FindMergedProjectRefsByRepoAndBranch("mongodb", "mci", "main")
 	assert.NoError(err)
 	require.Len(projectRefs, 1)
 	assert.Equal("ident", projectRefs[0].Id)
@@ -280,7 +300,35 @@ func TestFindProjectRefsByRepoAndBranch(t *testing.T) {
 
 	projectRef.Id = "ident2"
 	assert.NoError(projectRef.Insert())
-	projectRefs, err = FindMergedProjectRefsByRepoAndBranch("mongodb", "mci", "master")
+	projectRefs, err = FindMergedProjectRefsByRepoAndBranch("mongodb", "mci", "main")
+	assert.NoError(err)
+	assert.Len(projectRefs, 2)
+
+	projectRef.Id = "uses_repo"
+	projectRef.Enabled = nil
+	projectRef.RepoRefId = "my_repo"
+	projectRef.UseRepoSettings = true
+	assert.NoError(projectRef.Insert())
+
+	repoRef := RepoRef{ProjectRef{
+		Id:      "my_repo",
+		Enabled: utility.FalsePtr(),
+	}}
+	assert.NoError(repoRef.Insert())
+
+	projectRefs, err = FindMergedProjectRefsByRepoAndBranch("mongodb", "mci", "main")
+	assert.NoError(err)
+	assert.Len(projectRefs, 2)
+
+	repoRef.Enabled = utility.TruePtr()
+	assert.NoError(repoRef.Upsert())
+	projectRefs, err = FindMergedProjectRefsByRepoAndBranch("mongodb", "mci", "main")
+	assert.NoError(err)
+	assert.Len(projectRefs, 3)
+
+	projectRef.Enabled = utility.FalsePtr()
+	assert.NoError(projectRef.Upsert())
+	projectRefs, err = FindMergedProjectRefsByRepoAndBranch("mongodb", "mci", "main")
 	assert.NoError(err)
 	assert.Len(projectRefs, 2)
 }
@@ -292,52 +340,51 @@ func TestFindOneProjectRefByRepoAndBranchWithPRTesting(t *testing.T) {
 
 	require.NoError(db.Clear(ProjectRefCollection))
 
-	projectRef, err := FindOneProjectRefByRepoAndBranchWithPRTesting("mongodb", "mci", "master")
+	projectRef, err := FindOneProjectRefByRepoAndBranchWithPRTesting("mongodb", "mci", "main")
 	assert.NoError(err)
 	assert.Nil(projectRef)
 
 	doc := &ProjectRef{
 		Owner:            "mongodb",
 		Repo:             "mci",
-		Branch:           "master",
-		Enabled:          false,
+		Branch:           "main",
+		Enabled:          utility.FalsePtr(),
 		BatchTime:        10,
 		Id:               "ident0",
-		PRTestingEnabled: false,
+		PRTestingEnabled: utility.FalsePtr(),
 	}
 	require.NoError(doc.Insert())
 
 	// 1 disabled document = no match
-	projectRef, err = FindOneProjectRefByRepoAndBranchWithPRTesting("mongodb", "mci", "master")
+	projectRef, err = FindOneProjectRefByRepoAndBranchWithPRTesting("mongodb", "mci", "main")
 	assert.NoError(err)
 	assert.Nil(projectRef)
 
 	// 2 docs, 1 enabled, but the enabled one has pr testing disabled = no match
 	doc.Id = "ident_"
-	doc.PRTestingEnabled = false
-	doc.Enabled = true
+	doc.PRTestingEnabled = utility.FalsePtr()
+	doc.Enabled = utility.TruePtr()
 	require.NoError(doc.Insert())
-	projectRef, err = FindOneProjectRefByRepoAndBranchWithPRTesting("mongodb", "mci", "master")
+	projectRef, err = FindOneProjectRefByRepoAndBranchWithPRTesting("mongodb", "mci", "main")
 	assert.NoError(err)
 	require.Nil(projectRef)
 
 	// 3 docs, 2 enabled, but only 1 has pr testing enabled = match
 	doc.Id = "ident1"
-	doc.PRTestingEnabled = true
+	doc.PRTestingEnabled = utility.TruePtr()
 	require.NoError(doc.Insert())
-	projectRef, err = FindOneProjectRefByRepoAndBranchWithPRTesting("mongodb", "mci", "master")
+	projectRef, err = FindOneProjectRefByRepoAndBranchWithPRTesting("mongodb", "mci", "main")
 	assert.NoError(err)
 	require.NotNil(projectRef)
 	assert.Equal("ident1", projectRef.Id)
 	assert.Equal("buildlogger", projectRef.DefaultLogger)
 
-	// 2 matching documents, error!
+	// 2 matching documents, we just return one of those projects
 	doc.Id = "ident2"
 	require.NoError(doc.Insert())
-	projectRef, err = FindOneProjectRefByRepoAndBranchWithPRTesting("mongodb", "mci", "master")
-	assert.Error(err)
-	assert.Contains(err.Error(), "found 2 project refs, when 1 was expected")
-	require.Nil(projectRef)
+	projectRef, err = FindOneProjectRefByRepoAndBranchWithPRTesting("mongodb", "mci", "main")
+	assert.NoError(err)
+	assert.NotNil(projectRef)
 }
 
 func TestFindOneProjectRefWithCommitQueueByOwnerRepoAndBranch(t *testing.T) {
@@ -345,36 +392,68 @@ func TestFindOneProjectRefWithCommitQueueByOwnerRepoAndBranch(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 
-	require.NoError(db.Clear(ProjectRefCollection))
+	require.NoError(db.ClearCollections(ProjectRefCollection, RepoRefCollection))
 
-	projectRef, err := FindOneProjectRefWithCommitQueueByOwnerRepoAndBranch("mongodb", "mci", "master")
+	projectRef, err := FindOneProjectRefWithCommitQueueByOwnerRepoAndBranch("mongodb", "mci", "main")
 	assert.NoError(err)
 	assert.Nil(projectRef)
 
 	doc := &ProjectRef{
 		Owner:   "mongodb",
 		Repo:    "mci",
-		Branch:  "master",
+		Branch:  "main",
 		Id:      "mci",
-		Enabled: true,
-		CommitQueue: CommitQueueParams{
-			Enabled: false,
-		},
+		Enabled: utility.TruePtr(),
 	}
 	require.NoError(doc.Insert())
 
-	projectRef, err = FindOneProjectRefWithCommitQueueByOwnerRepoAndBranch("mongodb", "mci", "master")
+	projectRef, err = FindOneProjectRefWithCommitQueueByOwnerRepoAndBranch("mongodb", "mci", "main")
 	assert.NoError(err)
 	assert.Nil(projectRef)
 
-	doc.CommitQueue.Enabled = true
-	require.NoError(db.Update(ProjectRefCollection, bson.M{ProjectRefIdKey: "mci"}, doc))
+	doc.CommitQueue.Enabled = utility.TruePtr()
+	require.NoError(db.Update(ProjectRefCollection, mgobson.M{ProjectRefIdKey: "mci"}, doc))
 
-	projectRef, err = FindOneProjectRefWithCommitQueueByOwnerRepoAndBranch("mongodb", "mci", "master")
+	projectRef, err = FindOneProjectRefWithCommitQueueByOwnerRepoAndBranch("mongodb", "mci", "main")
 	assert.NoError(err)
 	assert.NotNil(projectRef)
 	assert.Equal("mci", projectRef.Id)
 	assert.Equal("buildlogger", projectRef.DefaultLogger)
+
+	// doc defaults to repo, which is not enabled
+	doc = &ProjectRef{
+		Owner:           "mongodb",
+		Repo:            "mci",
+		Branch:          "not_main",
+		Id:              "mci_main",
+		RepoRefId:       "my_repo",
+		UseRepoSettings: true,
+	}
+	repoDoc := &RepoRef{ProjectRef{Id: "my_repo"}}
+	assert.NoError(doc.Insert())
+	assert.NoError(repoDoc.Insert())
+
+	projectRef, err = FindOneProjectRefWithCommitQueueByOwnerRepoAndBranch("mongodb", "mci", "not_main")
+	assert.NoError(err)
+	assert.Nil(projectRef)
+
+	// doc defaults to repo, which is enabled
+	repoDoc.Enabled = utility.TruePtr()
+	repoDoc.CommitQueue.Enabled = utility.TruePtr()
+	assert.NoError(repoDoc.Update())
+
+	projectRef, err = FindOneProjectRefWithCommitQueueByOwnerRepoAndBranch("mongodb", "mci", "not_main")
+	assert.NoError(err)
+	assert.NotNil(projectRef)
+	assert.Equal("mci_main", projectRef.Id)
+	assert.Equal("buildlogger", projectRef.DefaultLogger)
+
+	// doc doesn't default to repo
+	doc.CommitQueue.Enabled = utility.FalsePtr()
+	assert.NoError(doc.Update())
+	projectRef, err = FindOneProjectRefWithCommitQueueByOwnerRepoAndBranch("mongodb", "mci", "not_main")
+	assert.NoError(err)
+	assert.Nil(projectRef)
 }
 
 func TestCanEnableCommitQueue(t *testing.T) {
@@ -385,11 +464,11 @@ func TestCanEnableCommitQueue(t *testing.T) {
 	doc := &ProjectRef{
 		Owner:   "mongodb",
 		Repo:    "mci",
-		Branch:  "master",
+		Branch:  "main",
 		Id:      "mci",
-		Enabled: true,
+		Enabled: utility.TruePtr(),
 		CommitQueue: CommitQueueParams{
-			Enabled: true,
+			Enabled: utility.TruePtr(),
 		},
 	}
 	require.NoError(doc.Insert())
@@ -400,11 +479,11 @@ func TestCanEnableCommitQueue(t *testing.T) {
 	doc2 := &ProjectRef{
 		Owner:   "mongodb",
 		Repo:    "mci",
-		Branch:  "master",
+		Branch:  "main",
 		Id:      "not-mci",
-		Enabled: true,
+		Enabled: utility.TruePtr(),
 		CommitQueue: CommitQueueParams{
-			Enabled: false,
+			Enabled: utility.FalsePtr(),
 		},
 	}
 	require.NoError(doc2.Insert())
@@ -413,25 +492,79 @@ func TestCanEnableCommitQueue(t *testing.T) {
 	assert.False(ok)
 }
 
+func TestFindMergedEnabledProjectRefsByOwnerAndRepo(t *testing.T) {
+	require.NoError(t, db.ClearCollections(ProjectRefCollection, RepoRefCollection))
+	projectRefs, err := FindMergedEnabledProjectRefsByOwnerAndRepo("mongodb", "mci")
+	assert.NoError(t, err)
+	assert.Empty(t, projectRefs)
+
+	repoRef := RepoRef{ProjectRef{
+		Id:      "my_repo",
+		Enabled: utility.TruePtr(),
+	}}
+	assert.NoError(t, repoRef.Insert())
+	doc := &ProjectRef{
+		Enabled:         utility.TruePtr(),
+		Owner:           "mongodb",
+		Repo:            "mci",
+		Branch:          "main",
+		Identifier:      "mci",
+		Id:              "1",
+		RepoRefId:       repoRef.Id,
+		UseRepoSettings: true,
+	}
+	assert.NoError(t, doc.Insert())
+	doc.Enabled = nil
+	doc.Id = "2"
+	assert.NoError(t, doc.Insert())
+
+	doc.Enabled = utility.FalsePtr()
+	doc.Id = "3"
+	assert.NoError(t, doc.Insert())
+
+	doc.Enabled = utility.TruePtr()
+	doc.RepoRefId = ""
+	doc.UseRepoSettings = false
+	doc.Id = "4"
+	assert.NoError(t, doc.Insert())
+
+	projectRefs, err = FindMergedEnabledProjectRefsByOwnerAndRepo("mongodb", "mci")
+	assert.NoError(t, err)
+	require.Len(t, projectRefs, 3)
+	assert.NotEqual(t, projectRefs[0].Id, "3")
+	assert.NotEqual(t, projectRefs[1].Id, "3")
+	assert.NotEqual(t, projectRefs[2].Id, "3")
+}
+
 func TestFindProjectRefsWithCommitQueueEnabled(t *testing.T) {
 	evergreen.GetEnvironment().Settings().LoggerConfig.DefaultLogger = "buildlogger"
 	assert := assert.New(t)
 	require := require.New(t)
 
-	require.NoError(db.Clear(ProjectRefCollection))
+	require.NoError(db.ClearCollections(ProjectRefCollection, RepoRefCollection))
 	projectRefs, err := FindProjectRefsWithCommitQueueEnabled()
 	assert.NoError(err)
 	assert.Empty(projectRefs)
 
-	doc := &ProjectRef{
-		Enabled:    true,
-		Owner:      "mongodb",
-		Repo:       "mci",
-		Branch:     "master",
-		Identifier: "mci",
-		Id:         "1",
+	repoRef := RepoRef{ProjectRef{
+		Id:      "my_repo",
+		Enabled: utility.TruePtr(),
 		CommitQueue: CommitQueueParams{
-			Enabled: true,
+			Enabled: utility.TruePtr(),
+		},
+	}}
+	assert.NoError(repoRef.Insert())
+	doc := &ProjectRef{
+		Enabled:         utility.TruePtr(),
+		Owner:           "mongodb",
+		Repo:            "mci",
+		Branch:          "main",
+		Identifier:      "mci",
+		Id:              "1",
+		RepoRefId:       repoRef.Id,
+		UseRepoSettings: true,
+		CommitQueue: CommitQueueParams{
+			Enabled: utility.TruePtr(),
 		},
 	}
 	require.NoError(doc.Insert())
@@ -443,7 +576,7 @@ func TestFindProjectRefsWithCommitQueueEnabled(t *testing.T) {
 	doc.Identifier = "grip"
 	doc.Repo = "grip"
 	doc.Id = "3"
-	doc.CommitQueue.Enabled = false
+	doc.CommitQueue.Enabled = utility.FalsePtr()
 	require.NoError(doc.Insert())
 
 	projectRefs, err = FindProjectRefsWithCommitQueueEnabled()
@@ -453,6 +586,20 @@ func TestFindProjectRefsWithCommitQueueEnabled(t *testing.T) {
 	assert.Equal("buildlogger", projectRefs[0].DefaultLogger)
 	assert.Equal("mci", projectRefs[1].Identifier)
 	assert.Equal("buildlogger", projectRefs[1].DefaultLogger)
+
+	doc.Id = "both_settings_from_repo"
+	doc.Enabled = nil
+	doc.CommitQueue.Enabled = nil
+	assert.NoError(doc.Insert())
+	projectRefs, err = FindProjectRefsWithCommitQueueEnabled()
+	assert.NoError(err)
+	assert.Len(projectRefs, 3)
+
+	repoRef.CommitQueue.Enabled = utility.FalsePtr()
+	assert.NoError(repoRef.Upsert())
+	projectRefs, err = FindProjectRefsWithCommitQueueEnabled()
+	assert.NoError(err)
+	assert.Len(projectRefs, 2)
 }
 
 func TestValidatePeriodicBuildDefinition(t *testing.T) {
@@ -504,20 +651,30 @@ func TestGetPatchTriggerAlias(t *testing.T) {
 }
 
 func TestFindDownstreamProjects(t *testing.T) {
-	require.NoError(t, db.Clear(ProjectRefCollection))
+	require.NoError(t, db.ClearCollections(ProjectRefCollection, RepoRefCollection))
 	evergreen.GetEnvironment().Settings().LoggerConfig.DefaultLogger = "buildlogger"
 
+	repoRef := RepoRef{ProjectRef{
+		Id:      "my_repo",
+		Enabled: utility.TruePtr(),
+	}}
+	assert.NoError(t, repoRef.Insert())
+
 	proj1 := ProjectRef{
-		Id:       "evergreen",
-		Enabled:  true,
-		Triggers: []TriggerDefinition{{Project: "grip"}},
+		Id:              "evergreen",
+		RepoRefId:       repoRef.Id,
+		UseRepoSettings: true,
+		Enabled:         utility.TruePtr(),
+		Triggers:        []TriggerDefinition{{Project: "grip"}},
 	}
 	require.NoError(t, proj1.Insert())
 
 	proj2 := ProjectRef{
-		Id:       "mci",
-		Enabled:  false,
-		Triggers: []TriggerDefinition{{Project: "grip"}},
+		Id:              "mci",
+		RepoRefId:       repoRef.Id,
+		UseRepoSettings: true,
+		Enabled:         utility.FalsePtr(),
+		Triggers:        []TriggerDefinition{{Project: "grip"}},
 	}
 	require.NoError(t, proj2.Insert())
 
@@ -526,6 +683,18 @@ func TestFindDownstreamProjects(t *testing.T) {
 	assert.Len(t, projects, 1)
 	proj1.DefaultLogger = "buildlogger"
 	assert.Equal(t, proj1, projects[0])
+
+	proj1.Enabled = nil
+	assert.NoError(t, proj1.Upsert())
+	projects, err = FindDownstreamProjects("grip")
+	assert.NoError(t, err)
+	assert.Len(t, projects, 1)
+
+	proj2.Enabled = nil
+	assert.NoError(t, proj2.Upsert())
+	projects, err = FindDownstreamProjects("grip")
+	assert.NoError(t, err)
+	assert.Len(t, projects, 2)
 }
 
 func TestAddPermissions(t *testing.T) {
@@ -634,4 +803,66 @@ func TestGetProjectSetupCommands(t *testing.T) {
 	assert.Len(t, cmds, 2)
 	assert.Contains(t, cmds[0].String(), "c0")
 	assert.Contains(t, cmds[1].String(), "c1")
+}
+
+func TestFindPeriodicProjects(t *testing.T) {
+	assert.NoError(t, db.ClearCollections(ProjectRefCollection, RepoRefCollection))
+
+	repoRef := RepoRef{ProjectRef{
+		Enabled:        utility.TruePtr(),
+		Id:             "my_repo",
+		PeriodicBuilds: []PeriodicBuildDefinition{{ID: "repo_def"}},
+	}}
+	assert.NoError(t, repoRef.Insert())
+
+	pRef := ProjectRef{
+		Id:              "p1",
+		RepoRefId:       "my_repo",
+		UseRepoSettings: true,
+		PeriodicBuilds:  []PeriodicBuildDefinition{},
+	}
+	assert.NoError(t, pRef.Insert())
+
+	pRef.Id = "p2"
+	pRef.PeriodicBuilds = []PeriodicBuildDefinition{{ID: "p1"}}
+	assert.NoError(t, pRef.Insert())
+
+	pRef.Id = "p3"
+	pRef.PeriodicBuilds = nil
+	assert.NoError(t, pRef.Insert())
+
+	pRef.Id = "p4"
+	pRef.Enabled = utility.FalsePtr()
+	pRef.PeriodicBuilds = []PeriodicBuildDefinition{{ID: "p1"}}
+	assert.NoError(t, pRef.Insert())
+
+	projects, err := FindPeriodicProjects()
+	assert.NoError(t, err)
+	assert.Len(t, projects, 2)
+}
+
+func TestPointers(t *testing.T) {
+	assert.NoError(t, db.ClearCollections(ProjectRefCollection))
+	ref := struct {
+		MyString string            `bson:"my_str"`
+		MyBool   bool              `bson:"my_bool"`
+		MyStruct WorkstationConfig `bson:"config"`
+	}{
+		MyString: "this is a string",
+		MyBool:   false,
+		MyStruct: WorkstationConfig{GitClone: true},
+	}
+
+	assert.NoError(t, db.Insert(ProjectRefCollection, ref))
+
+	pointerRef := struct {
+		PtrString *string            `bson:"my_str"`
+		PtrBool   *bool              `bson:"my_bool"`
+		PtrStruct *WorkstationConfig `bson:"config"`
+	}{}
+	assert.NoError(t, db.FindOne(ProjectRefCollection, nil, nil, nil, &pointerRef))
+	assert.Equal(t, ref.MyString, *pointerRef.PtrString)
+	assert.False(t, utility.FromBoolTPtr(pointerRef.PtrBool))
+	assert.NotNil(t, pointerRef.PtrStruct)
+	assert.True(t, pointerRef.PtrStruct.GitClone)
 }

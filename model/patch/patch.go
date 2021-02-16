@@ -163,6 +163,9 @@ type Patch struct {
 	GitInfo         *GitMetadata           `bson:"git_info,omitempty"`
 	// DisplayNewUI is only used when roundtripping the patch via the CLI
 	DisplayNewUI bool `bson:"display_new_ui,omitempty"`
+	// MergeStatus is only used in gitServePatch to send the status of this
+	// patch on the commit queue to the agent
+	MergeStatus string `json:"merge_status"`
 }
 
 func (p *Patch) MarshalBSON() ([]byte, error)  { return mgobson.Marshal(p) }
@@ -185,9 +188,10 @@ type PatchSet struct {
 }
 
 type TriggerInfo struct {
-	Aliases      []string `bson:"aliases,omitempty"`
-	ParentPatch  string   `bson:"parent_patch,omitempty"`
-	ChildPatches []string `bson:"child_patches,omitempty"`
+	Aliases              []string    `bson:"aliases,omitempty"`
+	ParentPatch          string      `bson:"parent_patch,omitempty"`
+	ChildPatches         []string    `bson:"child_patches,omitempty"`
+	DownstreamParameters []Parameter `bson:"downstream_parameters,omitempty"`
 }
 
 type PatchTriggerDefinition struct {
@@ -314,6 +318,20 @@ func (p *Patch) SetParameters(parameters []Parameter) error {
 			"$set": bson.M{
 				ParametersKey: parameters,
 			},
+		},
+	)
+}
+
+func (p *Patch) SetDownstreamParameters(parameters []Parameter) error {
+	for _, param := range parameters {
+		p.Triggers.DownstreamParameters = append(p.Triggers.DownstreamParameters, param)
+	}
+
+	triggersKey := bsonutil.GetDottedKeyName(TriggersKey, TriggerInfoDownstreamParametersKey)
+	return UpdateOne(
+		bson.M{IdKey: p.Id},
+		bson.M{
+			"$push": bson.M{triggersKey: bson.M{"$each": parameters}},
 		},
 	)
 }
@@ -645,6 +663,25 @@ func (p *Patch) IsChild() bool {
 	return p.Triggers.ParentPatch != ""
 }
 
+func (p *Patch) SetParametersFromParent() error {
+	parentPatchId := p.Triggers.ParentPatch
+	parentPatch, err := FindOneId(parentPatchId)
+	if err != nil {
+		return errors.Wrap(err, "can't get parent patch")
+	}
+	if parentPatch == nil {
+		return errors.Errorf(fmt.Sprintf("parent patch '%s' does not exist", parentPatchId))
+	}
+
+	if downstreamParams := parentPatch.Triggers.DownstreamParameters; len(downstreamParams) > 0 {
+		err = p.SetParameters(downstreamParams)
+		if err != nil {
+			return errors.Wrap(err, "error setting parameters")
+		}
+	}
+	return nil
+}
+
 func (p *Patch) GetRequester() string {
 	if p.IsGithubPRPatch() {
 		return evergreen.GithubPRRequester
@@ -820,7 +857,7 @@ func IsMailboxDiff(patchDiff string) bool {
 	return strings.HasPrefix(patchDiff, "From ")
 }
 
-func MakeNewMergePatch(pr *github.PullRequest, projectID, alias string) (*Patch, error) {
+func MakeNewMergePatch(pr *github.PullRequest, projectID, alias, commitTitle string) (*Patch, error) {
 	if pr.User == nil {
 		return nil, errors.New("pr contains no user")
 	}
@@ -856,6 +893,7 @@ func MakeNewMergePatch(pr *github.PullRequest, projectID, alias string) (*Patch,
 			BaseRepo:       pr.Base.Repo.GetName(),
 			BaseBranch:     pr.Base.GetRef(),
 			HeadHash:       pr.Head.GetSHA(),
+			CommitTitle:    commitTitle,
 		},
 	}
 

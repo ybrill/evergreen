@@ -124,7 +124,7 @@ func (pc *DBProjectConnector) EnablePRTesting(projectRef *model.ProjectRef) erro
 		return errors.Wrap(err, "error finding project refs")
 	}
 	for _, ref := range conflictingRefs {
-		if ref.PRTestingEnabled && ref.Id != projectRef.Id {
+		if ref.IsPRTestingEnabled() && ref.Id != projectRef.Id {
 			return errors.Errorf("Cannot enable PR Testing in this repo, must disable in other projects first")
 		}
 	}
@@ -391,6 +391,32 @@ type MockProjectConnector struct {
 	CachedEvents   []restModel.APIProjectEvent
 }
 
+func (pc *MockProjectConnector) FindProjectById(projectId string, includeRepo bool) (*model.ProjectRef, error) {
+	for _, p := range pc.CachedProjects {
+		if p.Id == projectId || p.Identifier == projectId {
+			return &p, nil
+		}
+	}
+	return nil, gimlet.ErrorResponse{
+		StatusCode: http.StatusNotFound,
+		Message:    fmt.Sprintf("project with id '%s' not found", projectId),
+	}
+}
+
+func (pc *MockProjectConnector) CreateProject(projectRef *model.ProjectRef, u *user.DBUser) error {
+	projectRef.Id = mgobson.NewObjectId().Hex()
+	for _, p := range pc.CachedProjects {
+		if p.Id == projectRef.Id {
+			return gimlet.ErrorResponse{
+				StatusCode: http.StatusInternalServerError,
+				Message:    fmt.Sprintf("project with id '%s' was not inserted", projectRef.Id),
+			}
+		}
+	}
+	pc.CachedProjects = append(pc.CachedProjects, *projectRef)
+	return nil
+}
+
 // FindProjects queries the cached projects slice for the matching projects.
 // Assumes CachedProjects is sorted in alphabetical order of project identifier.
 func (pc *MockProjectConnector) FindProjects(key string, limit int, sortDir int) ([]model.ProjectRef, error) {
@@ -417,32 +443,6 @@ func (pc *MockProjectConnector) FindProjects(key string, limit int, sortDir int)
 		}
 	}
 	return projects, nil
-}
-
-func (pc *MockProjectConnector) FindProjectById(projectId string, includeRepo bool) (*model.ProjectRef, error) {
-	for _, p := range pc.CachedProjects {
-		if p.Id == projectId || p.Identifier == projectId {
-			return &p, nil
-		}
-	}
-	return nil, gimlet.ErrorResponse{
-		StatusCode: http.StatusNotFound,
-		Message:    fmt.Sprintf("project with id '%s' not found", projectId),
-	}
-}
-
-func (pc *MockProjectConnector) CreateProject(projectRef *model.ProjectRef, u *user.DBUser) error {
-	projectRef.Id = mgobson.NewObjectId().Hex()
-	for _, p := range pc.CachedProjects {
-		if p.Id == projectRef.Id {
-			return gimlet.ErrorResponse{
-				StatusCode: http.StatusInternalServerError,
-				Message:    fmt.Sprintf("project with id '%s' was not inserted", projectRef.Id),
-			}
-		}
-	}
-	pc.CachedProjects = append(pc.CachedProjects, *projectRef)
-	return nil
 }
 
 func (pc *MockProjectConnector) UpdateProject(projectRef *model.ProjectRef) error {
@@ -591,7 +591,7 @@ func (pc *MockProjectConnector) GetProjectEventLog(id string, before time.Time, 
 
 func (pc *MockProjectConnector) GetProjectWithCommitQueueByOwnerRepoAndBranch(owner, repo, branch string) (*model.ProjectRef, error) {
 	for _, p := range pc.CachedProjects {
-		if p.Owner == owner && p.Repo == repo && p.Branch == branch && p.CommitQueue.Enabled == true {
+		if p.Owner == owner && p.Repo == repo && p.Branch == branch && p.CommitQueue.IsEnabled() {
 			return &p, nil
 		}
 	}
@@ -601,7 +601,7 @@ func (pc *MockProjectConnector) GetProjectWithCommitQueueByOwnerRepoAndBranch(ow
 func (pc *MockProjectConnector) FindEnabledProjectRefsByOwnerAndRepo(owner, repo string) ([]model.ProjectRef, error) {
 	refs := []model.ProjectRef{}
 	for _, p := range pc.CachedProjects {
-		if p.Owner == owner && p.Repo == repo && p.Enabled == true {
+		if p.Owner == owner && p.Repo == repo && p.IsEnabled() {
 			refs = append(refs, p)
 		}
 	}

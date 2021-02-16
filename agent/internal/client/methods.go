@@ -448,15 +448,20 @@ func (c *communicatorImpl) SendTaskResults(ctx context.Context, taskData TaskDat
 
 // GetPatch tries to get the patch data from the server in json format,
 // and unmarhals it into a patch struct. The GET request is attempted
-// multiple times upon failure.
-func (c *communicatorImpl) GetTaskPatch(ctx context.Context, taskData TaskData) (*patchmodel.Patch, error) {
+// multiple times upon failure. If patchId is not specified, the task's
+// patch is returned
+func (c *communicatorImpl) GetTaskPatch(ctx context.Context, taskData TaskData, patchId string) (*patchmodel.Patch, error) {
 	patch := patchmodel.Patch{}
 	info := requestInfo{
 		method:   http.MethodGet,
 		taskData: &taskData,
 		version:  apiVersion1,
 	}
-	info.setTaskPathSuffix("git/patch")
+	suffix := "git/patch"
+	if patchId != "" {
+		suffix = fmt.Sprintf("%s?patch=%s", suffix, patchId)
+	}
+	info.setTaskPathSuffix(suffix)
 	resp, err := c.retryRequest(ctx, info, nil)
 	if err != nil {
 		return nil, utility.RespErrorf(resp, "failed to get patch for task %s: %s", taskData.ID, err.Error())
@@ -864,4 +869,29 @@ func (c *communicatorImpl) GetDockerLogs(ctx context.Context, hostID string, sta
 	}
 
 	return body, nil
+}
+
+func (c *communicatorImpl) ConcludeMerge(ctx context.Context, patchId, status string, td TaskData) error {
+	info := requestInfo{
+		method:   http.MethodGet,
+		path:     fmt.Sprintf("commit_queue/%s/conclude_merge", patchId),
+		version:  apiVersion2,
+		taskData: &td,
+	}
+	body := struct {
+		Status string `json:"status"`
+	}{
+		Status: status,
+	}
+	resp, err := c.request(ctx, info, body)
+	if err != nil {
+		return errors.Wrapf(err, "error concluding merge")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return utility.RespErrorf(resp, "error concluding merge")
+	}
+
+	return nil
 }
