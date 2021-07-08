@@ -1,11 +1,13 @@
 package util
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mongodb/grip"
 	"github.com/pkg/errors"
@@ -46,8 +48,9 @@ func getPIDsToKill(key, workingDir string, logger grip.Journaler) ([]int, error)
 		Each line of output has a format with the pid, command, and environment, e.g.:
 		1084 foo.sh PATH=/usr/bin/sbin TMPDIR=/tmp LOGNAME=xxx
 	*/
-
-	out, err := exec.Command("ps", "-E", "-e", "-o", "pid,command").CombinedOutput()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "ps", "-E", "-e", "-o", "pid,command").CombinedOutput()
 	if err != nil {
 		m := "cleanup failed to get output of 'ps'"
 		logger.Errorf("%s: %v", m, err)
