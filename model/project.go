@@ -253,6 +253,13 @@ func (bvt *BuildVariantTaskUnit) IsDisabled() bool {
 	return utility.FromBoolPtr(bvt.Disable)
 }
 
+func (bvt *BuildVariantTaskUnit) ToTVPair() TVPair {
+	return TVPair{
+		TaskName: bvt.Name,
+		Variant:  bvt.Variant,
+	}
+}
+
 type BuildVariant struct {
 	Name        string            `yaml:"name,omitempty" bson:"name"`
 	DisplayName string            `yaml:"display_name,omitempty" bson:"display_name"`
