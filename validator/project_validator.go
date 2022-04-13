@@ -20,8 +20,6 @@ import (
 	"github.com/mongodb/grip/level"
 	"github.com/pkg/errors"
 	"gonum.org/v1/gonum/graph"
-	"gonum.org/v1/gonum/graph/multi"
-	"gonum.org/v1/gonum/graph/topo"
 	"gonum.org/v1/gonum/graph/traverse"
 )
 
@@ -337,8 +335,8 @@ func validateAllDependenciesSpec(project *model.Project) ValidationErrors {
 // validateDependencyGraph returns an non-nil ValidationErrors if the dependency graph contains cycles.
 func validateDependencyGraph(project *model.Project) ValidationErrors {
 	var errs ValidationErrors
-	graph := newTaskDependencyGraph(project)
-	for _, cycle := range graph.cycles() {
+	graph := model.NewDependencyGraphFromProject(project)
+	for _, cycle := range graph.Cycles() {
 		var tvStrings []string
 		for _, task := range cycle {
 			tvStrings = append(tvStrings, task.String())
@@ -350,129 +348,6 @@ func validateDependencyGraph(project *model.Project) ValidationErrors {
 	}
 
 	return errs
-}
-
-type taskDependencyGraph struct {
-	graph        *multi.DirectedGraph
-	tasksToNodes map[model.TVPair]graph.Node
-	nodesToTasks map[graph.Node]model.TVPair
-	edgesToDeps  map[graph.Edge]model.TaskUnitDependency
-}
-
-func newTaskDependencyGraph(project *model.Project) taskDependencyGraph {
-	tasksToNodes := make(map[model.TVPair]graph.Node)
-	nodesToTasks := make(map[graph.Node]model.TVPair)
-	edgesToDeps := make(map[graph.Edge]model.TaskUnitDependency)
-	graph := multi.NewDirectedGraph()
-
-	tasks := project.FindAllBuildVariantTasks()
-	var taskTVs []model.TVPair
-
-	for _, task := range tasks {
-		node := graph.NewNode()
-		graph.AddNode(node)
-		tasksToNodes[task.ToTVPair()] = node
-		nodesToTasks[node] = task.ToTVPair()
-
-		taskTVs = append(taskTVs, task.ToTVPair())
-	}
-
-	for _, task := range tasks {
-		for dep, depTasks := range dependenciesForTaskUnit(task, taskTVs) {
-			for _, depTask := range depTasks {
-				line := graph.NewLine(tasksToNodes[task.ToTVPair()], tasksToNodes[depTask])
-				graph.SetLine(line)
-
-				edgesToDeps[graph.Edge(tasksToNodes[task.ToTVPair()].ID(), tasksToNodes[depTask].ID())] = dep
-			}
-		}
-	}
-
-	return taskDependencyGraph{
-		graph:        graph,
-		tasksToNodes: tasksToNodes,
-		nodesToTasks: nodesToTasks,
-		edgesToDeps:  edgesToDeps,
-	}
-}
-
-func (g *taskDependencyGraph) hasCycles() bool {
-	return len(topo.TarjanSCC(g.graph)) < g.graph.Nodes().Len()
-}
-
-func (g *taskDependencyGraph) cycles() [][]model.TVPair {
-	var cycles [][]model.TVPair
-	stronglyConnectedComponenets := topo.TarjanSCC(g.graph)
-	for _, scc := range stronglyConnectedComponenets {
-		var cycle []model.TVPair
-		for _, node := range scc {
-			taskInCycle := g.nodesToTasks[node]
-			cycle = append(cycle, taskInCycle)
-		}
-		cycles = append(cycles, cycle)
-	}
-
-	return cycles
-}
-
-func (g *taskDependencyGraph) addDependency(dependentTask, dependedOnTask model.TVPair) {
-	g.graph.SetLine(g.graph.NewLine(g.tasksToNodes[dependedOnTask], g.tasksToNodes[dependentTask]))
-}
-
-// dependenciesForTaskUnit returns a slice of the task variant pairs this task unit depends on.
-func dependenciesForTaskUnit(dependentTaskUnit model.BuildVariantTaskUnit, allTVPairs []model.TVPair) map[model.TaskUnitDependency][]model.TVPair {
-	dependencies := make(map[model.TaskUnitDependency][]model.TVPair)
-	for _, dep := range dependentTaskUnit.DependsOn {
-		// Use the current variant if none is specified.
-		if dep.Variant == "" {
-			dep.Variant = dependentTaskUnit.Variant
-		}
-
-		for _, tv := range allTVPairs {
-			depTV := model.TVPair{Variant: tv.Variant, TaskName: tv.TaskName}
-			if depTV != dependentTaskUnit.ToTVPair() &&
-				(dep.Variant == model.AllVariants || depTV.Variant == dep.Variant) &&
-				(dep.Name == model.AllDependencies || depTV.TaskName == dep.Name) {
-				dependencies[dep] = append(dependencies[dep], depTV)
-			}
-		}
-	}
-
-	return dependencies
-}
-
-// tvToTaskUnit generates all task-variant pairs mapped to their corresponding
-// task unit within a build variant.
-func tvToTaskUnit(p *model.Project) map[model.TVPair]model.BuildVariantTaskUnit {
-	// map of task name and variant -> BuildVariantTaskUnit
-	tasksByNameAndVariant := map[model.TVPair]model.BuildVariantTaskUnit{}
-
-	// generate task nodes for every task and variant combination
-
-	taskGroups := map[string]struct{}{}
-	for _, tg := range p.TaskGroups {
-		taskGroups[tg.Name] = struct{}{}
-	}
-	for _, bv := range p.BuildVariants {
-		tasksToAdd := []model.BuildVariantTaskUnit{}
-		for _, t := range bv.Tasks {
-			if _, ok := taskGroups[t.Name]; ok {
-				tasksToAdd = append(tasksToAdd, model.CreateTasksFromGroup(t, p, "")...)
-			} else {
-				tasksToAdd = append(tasksToAdd, t)
-			}
-		}
-		for _, t := range tasksToAdd {
-			t.Variant = bv.Name
-			node := model.TVPair{
-				Variant:  bv.Name,
-				TaskName: t.Name,
-			}
-
-			tasksByNameAndVariant[node] = t
-		}
-	}
-	return tasksByNameAndVariant
 }
 
 func validateProjectConfigPeriodicBuilds(pc *model.ProjectConfig) ValidationErrors {
@@ -1812,22 +1687,20 @@ func validateTaskSyncCommands(p *model.Project, runLong bool) ValidationErrors {
 // The dependedOnTask and every other task along the path must run on all the same requester types as the dependentTask
 // and the dependency on the dependedOnTask must be with a status in statuses, if provided.
 func validateTVDependsOnTV(dependentTask, dependedOnTask model.TVPair, statuses []string, project *model.Project) error {
-	g := newTaskDependencyGraph(project)
+	g := model.NewDependencyGraphFromProject(project)
 	tvTaskUnitMap := tvToTaskUnit(project)
 
 	traversal := traverse.DepthFirst{
 		Traverse: func(e graph.Edge) bool {
-			dependedOn := g.nodesToTasks[e.From()]
+			dependedOn := g.NodesToTasks[e.From()]
 			dependedOnTaskUnit := tvTaskUnitMap[dependedOn]
 
-			dependent := g.nodesToTasks[e.To()]
+			dependent := g.NodesToTasks[e.To()]
 			dependentTaskUnit := tvTaskUnitMap[dependent]
 
-			dep := g.edgesToDeps[e]
+			dep := g.EdgesToDeps[e]
 
-			// patches and mainline builds shouldn't depend on anything that's git tag only,
-			// while something that could run in a git tag build can't depend on something that's patchOnly.
-			// requireOnNonGitTag is just requireOnPatches & requireOnNonPatches so we don't consider this case.
+			// TODO rethink this comment
 			if !dependentTaskUnit.SkipOnPatchBuild() && !dependentTaskUnit.SkipOnNonGitTagBuild() &&
 				(dependedOnTaskUnit.SkipOnPatchBuild() || dependedOnTaskUnit.SkipOnNonGitTagBuild() || dep.PatchOptional) {
 				return false
@@ -1851,7 +1724,7 @@ func validateTVDependsOnTV(dependentTask, dependedOnTask model.TVPair, statuses 
 		},
 	}
 
-	finalNode := traversal.Walk(g.graph, g.tasksToNodes[dependentTask], func(n graph.Node) bool { return g.nodesToTasks[n] == dependedOnTask })
+	finalNode := traversal.Walk(g.Graph, g.TasksToNodes[dependentTask], func(n graph.Node) bool { return g.NodesToTasks[n] == dependedOnTask })
 	if finalNode == nil {
 		dependentBVTask := project.FindTaskForVariant(dependentTask.TaskName, dependentTask.Variant)
 		requireOnPatches := !dependentBVTask.SkipOnPatchBuild() && !dependentBVTask.SkipOnNonGitTagBuild()
@@ -1872,6 +1745,40 @@ func validateTVDependsOnTV(dependentTask, dependedOnTask model.TVPair, statuses 
 		return errors.Errorf(errMsg, dependentTask.TaskName, dependentTask.Variant, dependedOnTask.TaskName, dependedOnTask.Variant, strings.Join(statuses, ", "))
 	}
 	return nil
+}
+
+// tvToTaskUnit generates all task-variant pairs mapped to their corresponding
+// task unit within a build variant.
+func tvToTaskUnit(p *model.Project) map[model.TVPair]model.BuildVariantTaskUnit {
+	// map of task name and variant -> BuildVariantTaskUnit
+	tasksByNameAndVariant := map[model.TVPair]model.BuildVariantTaskUnit{}
+
+	// generate task nodes for every task and variant combination
+
+	taskGroups := map[string]struct{}{}
+	for _, tg := range p.TaskGroups {
+		taskGroups[tg.Name] = struct{}{}
+	}
+	for _, bv := range p.BuildVariants {
+		tasksToAdd := []model.BuildVariantTaskUnit{}
+		for _, t := range bv.Tasks {
+			if _, ok := taskGroups[t.Name]; ok {
+				tasksToAdd = append(tasksToAdd, model.CreateTasksFromGroup(t, p, "")...)
+			} else {
+				tasksToAdd = append(tasksToAdd, t)
+			}
+		}
+		for _, t := range tasksToAdd {
+			t.Variant = bv.Name
+			node := model.TVPair{
+				Variant:  bv.Name,
+				TaskName: t.Name,
+			}
+
+			tasksByNameAndVariant[node] = t
+		}
+	}
+	return tasksByNameAndVariant
 }
 
 // parseS3PullParameters returns the parameters from the s3.pull command that

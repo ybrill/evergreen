@@ -366,6 +366,7 @@ func isStepbackTask(generatorTask *task.Task, variant, taskName string) bool {
 }
 
 func addDependencies(t *task.Task, newTaskIds []string) error {
+
 	statuses := []string{evergreen.TaskSucceeded, task.AllStatuses}
 	for _, status := range statuses {
 		if err := t.UpdateDependsOn(status, newTaskIds); err != nil {
