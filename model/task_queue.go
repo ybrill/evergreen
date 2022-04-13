@@ -8,7 +8,6 @@ import (
 	"github.com/evergreen-ci/evergreen/db"
 	"github.com/evergreen-ci/evergreen/model/host"
 	"github.com/evergreen-ci/evergreen/model/task"
-	"github.com/evergreen-ci/tarjan"
 	"github.com/mongodb/anser/bsonutil"
 	adb "github.com/mongodb/anser/db"
 	"github.com/mongodb/grip"
@@ -209,31 +208,28 @@ func shouldRunTaskGroup(taskId string, spec TaskSpec) bool {
 	return false
 }
 
-func ValidateNewGraph(t *task.Task, tasksToBlock []task.Task) error {
-	tasksInVersion, err := task.FindAllTasksFromVersionWithDependencies(t.Version)
+func validateNewGraph(t *task.Task, tasksToBlock []task.Task) error {
+	dependencyGraph, err := NewDependencyGraphFromVersion(t.Version)
 	if err != nil {
-		return errors.Wrap(err, "finding version for task")
+		return errors.Wrapf(err, "getting dependency graph for version '%s'", t.Version)
 	}
 
-	// tmap maps tasks to their dependencies
-	tmap := map[string][]string{}
-	for _, t := range tasksInVersion {
-		for _, d := range t.DependsOn {
-			tmap[t.Id] = append(tmap[t.Id], d.TaskId)
-		}
-	}
-
-	// simulate proposed dependencies
 	for _, taskToBlock := range tasksToBlock {
-		tmap[taskToBlock.Id] = append(tmap[taskToBlock.Id], t.Id)
+		dependencyGraph.AddEdge(
+			TVPair{TaskName: taskToBlock.DisplayName, Variant: taskToBlock.BuildVariant},
+			TVPair{TaskName: t.DisplayName, Variant: t.BuildVariant},
+		)
 	}
 
 	catcher := grip.NewBasicCatcher()
-	for _, group := range tarjan.Connections(tmap) {
-		if len(group) > 1 {
-			catcher.Errorf("task dependency cycle detected: %s", strings.Join(group, ", "))
+	for _, cycle := range dependencyGraph.Cycles() {
+		taskNames := make([]string, 0, len(cycle))
+		for _, task := range cycle {
+			taskNames = append(taskNames, task.TaskName)
 		}
+		catcher.Errorf("task dependency cycle detected: %s", strings.Join(taskNames, ", "))
 	}
+
 	return catcher.Resolve()
 }
 
@@ -272,7 +268,7 @@ func BlockTaskGroupTasks(taskID string) error {
 	if err != nil {
 		return errors.Wrapf(err, "finding tasks '%s'", strings.Join(taskNamesToBlock, ", "))
 	}
-	if err = ValidateNewGraph(t, tasksToBlock); err != nil {
+	if err = validateNewGraph(t, tasksToBlock); err != nil {
 		return errors.Wrap(err, "validating proposed dependencies")
 	}
 

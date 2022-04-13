@@ -18,7 +18,6 @@ import (
 	"github.com/evergreen-ci/evergreen/model/event"
 	"github.com/evergreen-ci/evergreen/model/testresult"
 	"github.com/evergreen-ci/evergreen/util"
-	"github.com/evergreen-ci/tarjan"
 	"github.com/evergreen-ci/utility"
 	"github.com/mongodb/anser/bsonutil"
 	adb "github.com/mongodb/anser/db"
@@ -3035,33 +3034,6 @@ func (t *Task) BlockedState(dependencies map[string]*Task) (string, error) {
 	}
 
 	return "", nil
-}
-
-// CircularDependencies detects if any tasks in this version are part of a dependency cycle
-// Note that it does not check inter-version dependencies, because only evergreen can add those
-func (t *Task) CircularDependencies() error {
-	var err error
-	tasksWithDeps, err := FindAllTasksFromVersionWithDependencies(t.Version)
-	if err != nil {
-		return errors.Wrap(err, "finding tasks with dependencies")
-	}
-	if len(tasksWithDeps) == 0 {
-		return nil
-	}
-	dependencyMap := map[string][]string{}
-	for _, versionTask := range tasksWithDeps {
-		for _, dependency := range versionTask.DependsOn {
-			dependencyMap[versionTask.Id] = append(dependencyMap[versionTask.Id], dependency.TaskId)
-		}
-	}
-	catcher := grip.NewBasicCatcher()
-	cycles := tarjan.Connections(dependencyMap)
-	for _, cycle := range cycles {
-		if len(cycle) > 1 {
-			catcher.Errorf("dependency cycle detected: %s", strings.Join(cycle, ","))
-		}
-	}
-	return catcher.Resolve()
 }
 
 func (t *Task) FindAllUnmarkedBlockedDependencies() ([]Task, error) {
