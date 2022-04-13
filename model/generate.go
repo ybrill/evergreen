@@ -264,18 +264,17 @@ func (g *GeneratedProject) saveNewBuildsAndTasks(ctx context.Context, v *Version
 		return errors.Errorf("project '%s' not found", p.Identifier)
 	}
 
-	activatedTasksInExistingBuilds, err := addNewTasks(ctx, activationInfo, v, p, newTVPairsForExistingVariants, syncAtEndOpts, projectRef.Identifier, g.TaskID)
+	tasksInExistingBuilds, err := addNewTasks(ctx, activationInfo, v, p, newTVPairsForExistingVariants, syncAtEndOpts, projectRef.Identifier, g.TaskID)
 	if err != nil {
 		return errors.Wrap(err, "adding new tasks")
 	}
 
-	activatedTasksInNewBuilds, err := addNewBuilds(ctx, activationInfo, v, p, newTVPairsForNewVariants, syncAtEndOpts, projectRef, g.TaskID)
+	tasksInNewBuilds, err := addNewBuilds(ctx, activationInfo, v, p, newTVPairsForNewVariants, syncAtEndOpts, projectRef, g.TaskID)
 	if err != nil {
 		return errors.Wrap(err, "adding new builds")
 	}
 
-	// only want to add dependencies to activated tasks
-	if err = addDependencies(t, append(activatedTasksInExistingBuilds, activatedTasksInNewBuilds...)); err != nil {
+	if err = addDependencies(t, append(tasksInExistingBuilds, tasksInNewBuilds...)); err != nil {
 		return errors.Wrap(err, "adding dependencies")
 	}
 
@@ -365,12 +364,64 @@ func isStepbackTask(generatorTask *task.Task, variant, taskName string) bool {
 	return false
 }
 
-func addDependencies(t *task.Task, newTaskIds []string) error {
+func addDependencies(t *task.Task, newTasks task.Tasks) error {
+	// Only add dependencies to new tasks if they're activated.
+	var newTasksToDependOn task.Tasks
+	for _, newTask := range newTasks {
+		if newTask.Activated {
+			newTasksToDependOn = append(newTasksToDependOn, newTask)
+		}
+	}
 
-	statuses := []string{evergreen.TaskSucceeded, task.AllStatuses}
-	for _, status := range statuses {
-		if err := t.UpdateDependsOn(status, newTaskIds); err != nil {
-			return errors.Wrapf(err, "updating tasks depending on '%s'", t.Id)
+	dependencyGraph, err := simulateNewDependencyGraph(t, newTasksToDependOn)
+	if err != nil {
+		return errors.Wrap(err, "making new dependency graph")
+	}
+	if dependencyGraph.HasCycles() {
+		return errors.New("adding dependencies would create dependency cycles")
+	}
+
+	return saveDependenciesToTasks(t, newTasks, dependencyGraph)
+}
+
+func simulateNewDependencyGraph(t *task.Task, newTasksToDependOn task.Tasks) (TaskDependencyGraph, error) {
+	taskTV := TVPair{TaskName: t.DisplayName, Variant: t.BuildVariant}
+	dependencyGraph, err := NewDependencyGraphFromVersion(t.Version)
+	if err != nil {
+		return TaskDependencyGraph{}, errors.Wrapf(err, "creating dependency graph for version '%s'", t.Version)
+	}
+
+	dependentTVs := dependencyGraph.TasksDependingOnTask(taskTV)
+	for _, newTask := range newTasksToDependOn {
+		for _, dependentTV := range dependentTVs {
+			dependencyGraph.AddEdge(dependentTV, TVPair{TaskName: newTask.DisplayName, Variant: newTask.BuildVariant})
+		}
+	}
+
+	return dependencyGraph, nil
+}
+
+func saveDependenciesToTasks(dependedOnTask *task.Task, newTasksToDependOn task.Tasks, dependencyGraph TaskDependencyGraph) error {
+	for _, dependentTV := range dependencyGraph.TasksDependingOnTask(TVPair{TaskName: dependedOnTask.DisplayName, Variant: dependedOnTask.DisplayName}) {
+		dependedOnTV := TVPair{TaskName: dependedOnTask.DisplayName, Variant: dependedOnTask.BuildVariant}
+		dep, err := dependencyGraph.GetDependencyEdge(dependentTV, dependedOnTV)
+		if err != nil {
+			return errors.Errorf("dependency from '%s' and '%s' not found", dependentTV, dependedOnTV)
+		}
+
+		depTask, err := task.FindTaskForVersion(dependedOnTask.Version, dependentTV.TaskName, dependentTV.Variant)
+		if err != nil {
+			return errors.Wrap(err, "getting dependent task")
+		}
+		if depTask == nil {
+			return errors.Errorf("dependent task '%s' not found in version '%s'", dependentTV, dependedOnTask.Version)
+		}
+
+		for _, newTask := range newTasksToDependOn {
+			depTask.AddDependency(task.Dependency{
+				TaskId: newTask.Id,
+				Status: dep.Status,
+			})
 		}
 	}
 

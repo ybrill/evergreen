@@ -162,3 +162,12 @@ func (g *taskDependencyGraph) TasksDependingOnTask(t TVPair) []TVPair {
 
 	return dependentTasks
 }
+
+func (g *taskDependencyGraph) GetDependencyEdge(dependentTask, dependedOnTask TVPair) (TaskUnitDependency, error) {
+	edge := g.Graph.Edge(g.TasksToNodes[dependentTask].ID(), g.TasksToNodes[dependedOnTask].ID())
+	if edge == nil {
+		return TaskUnitDependency{}, errors.Errorf("'%s' has no dependency on '%s'", dependentTask, dependedOnTask)
+	}
+
+	return g.EdgesToDeps[edge], nil
+}
