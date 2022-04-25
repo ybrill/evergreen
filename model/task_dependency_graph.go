@@ -97,7 +97,7 @@ func (g *taskDependencyGraph) buildFromProject(p *Project) {
 	}
 }
 
-// dependenciesForTaskUnit returns a slice of the task variant pairs this task unit depends on.
+// dependenciesForTaskUnit returns a map of dependencies to the task variant pairs they match.
 func dependenciesForTaskUnit(dependentTaskUnit BuildVariantTaskUnit, allTVPairs []TVPair) map[TaskUnitDependency][]TVPair {
 	dependencies := make(map[TaskUnitDependency][]TVPair)
 	for _, dep := range dependentTaskUnit.DependsOn {
