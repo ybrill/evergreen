@@ -19,8 +19,6 @@ import (
 	"github.com/mongodb/grip"
 	"github.com/mongodb/grip/level"
 	"github.com/pkg/errors"
-	"gonum.org/v1/gonum/graph"
-	"gonum.org/v1/gonum/graph/traverse"
 )
 
 type projectValidator func(*model.Project) ValidationErrors
@@ -1690,42 +1688,34 @@ func validateTVDependsOnTV(dependentTask, dependedOnTask model.TVPair, statuses 
 	g := model.NewDependencyGraphFromProject(project)
 	tvTaskUnitMap := tvToTaskUnit(project)
 
-	traversal := traverse.DepthFirst{
-		Traverse: func(e graph.Edge) bool {
-			dependedOn := g.NodesToTasks[e.From()]
-			dependedOnTaskUnit := tvTaskUnitMap[dependedOn]
+	traversal := func(dependent, dependedOn model.TVPair, dep model.TaskUnitDependency) bool {
+		dependedOnTaskUnit := tvTaskUnitMap[dependedOn]
+		dependentTaskUnit := tvTaskUnitMap[dependent]
 
-			dependent := g.NodesToTasks[e.To()]
-			dependentTaskUnit := tvTaskUnitMap[dependent]
+		// TODO rethink this comment
+		if !dependentTaskUnit.SkipOnPatchBuild() && !dependentTaskUnit.SkipOnNonGitTagBuild() &&
+			(dependedOnTaskUnit.SkipOnPatchBuild() || dependedOnTaskUnit.SkipOnNonGitTagBuild() || dep.PatchOptional) {
+			return false
+		}
 
-			dep := g.EdgesToDeps[e]
+		if !dependentTaskUnit.SkipOnNonPatchBuild() && !dependentTaskUnit.SkipOnNonGitTagBuild() &&
+			dependedOnTaskUnit.SkipOnNonPatchBuild() || dependedOnTaskUnit.SkipOnNonGitTagBuild() {
+			return false
+		}
 
-			// TODO rethink this comment
-			if !dependentTaskUnit.SkipOnPatchBuild() && !dependentTaskUnit.SkipOnNonGitTagBuild() &&
-				(dependedOnTaskUnit.SkipOnPatchBuild() || dependedOnTaskUnit.SkipOnNonGitTagBuild() || dep.PatchOptional) {
-				return false
-			}
+		if !dependentTaskUnit.SkipOnNonPatchBuild() && !dependentTaskUnit.SkipOnGitTagBuild() &&
+			dependedOnTaskUnit.SkipOnNonPatchBuild() || dependedOnTaskUnit.SkipOnGitTagBuild() {
+			return false
+		}
 
-			if !dependentTaskUnit.SkipOnNonPatchBuild() && !dependentTaskUnit.SkipOnNonGitTagBuild() &&
-				dependedOnTaskUnit.SkipOnNonPatchBuild() || dependedOnTaskUnit.SkipOnNonGitTagBuild() {
-				return false
-			}
+		if statuses != nil && dependedOn == dependedOnTask {
+			return utility.StringSliceContains(statuses, dep.Status)
+		}
 
-			if !dependentTaskUnit.SkipOnNonPatchBuild() && !dependentTaskUnit.SkipOnGitTagBuild() &&
-				dependedOnTaskUnit.SkipOnNonPatchBuild() || dependedOnTaskUnit.SkipOnGitTagBuild() {
-				return false
-			}
-
-			if statuses != nil && dependedOn == dependedOnTask {
-				return utility.StringSliceContains(statuses, dep.Status)
-			}
-
-			return true
-		},
+		return true
 	}
 
-	finalNode := traversal.Walk(g.Graph, g.TasksToNodes[dependentTask], func(n graph.Node) bool { return g.NodesToTasks[n] == dependedOnTask })
-	if finalNode == nil {
+	if found := g.DepthFirstSearch(dependentTask, dependedOnTask, traversal); !found {
 		dependentBVTask := project.FindTaskForVariant(dependentTask.TaskName, dependentTask.Variant)
 		requireOnPatches := !dependentBVTask.SkipOnPatchBuild() && !dependentBVTask.SkipOnNonGitTagBuild()
 		requireOnNonPatches := !dependentBVTask.SkipOnNonPatchBuild() && !dependentBVTask.SkipOnNonGitTagBuild()

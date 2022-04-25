@@ -209,13 +209,13 @@ func shouldRunTaskGroup(taskId string, spec TaskSpec) bool {
 }
 
 func validateNewGraph(t *task.Task, tasksToBlock []task.Task) error {
-	dependencyGraph, err := NewDependencyGraphFromVersion(t.Version)
+	dependencyGraph, err := newDependencyGraphFromVersion(t.Version)
 	if err != nil {
 		return errors.Wrapf(err, "getting dependency graph for version '%s'", t.Version)
 	}
 
 	for _, taskToBlock := range tasksToBlock {
-		dependencyGraph.AddEdge(
+		dependencyGraph.addEdge(
 			TVPair{TaskName: taskToBlock.DisplayName, Variant: taskToBlock.BuildVariant},
 			TVPair{TaskName: t.DisplayName, Variant: t.BuildVariant},
 		)

@@ -6,13 +6,14 @@ import (
 	"gonum.org/v1/gonum/graph"
 	"gonum.org/v1/gonum/graph/multi"
 	"gonum.org/v1/gonum/graph/topo"
+	"gonum.org/v1/gonum/graph/traverse"
 )
 
 type taskDependencyGraph struct {
-	Graph        *multi.DirectedGraph
-	TasksToNodes map[TVPair]graph.Node
-	NodesToTasks map[graph.Node]TVPair
-	EdgesToDeps  map[graph.Edge]TaskUnitDependency
+	graph        *multi.DirectedGraph
+	tasksToNodes map[TVPair]graph.Node
+	nodesToTasks map[graph.Node]TVPair
+	edgesToDeps  map[graph.Edge]TaskUnitDependency
 }
 
 func NewDependencyGraphFromProject(p *Project) taskDependencyGraph {
@@ -22,17 +23,17 @@ func NewDependencyGraphFromProject(p *Project) taskDependencyGraph {
 	return g
 }
 
-func NewDependencyGraphFromVersion(versionID string) (taskDependencyGraph, error) {
+func newDependencyGraphFromVersion(versionID string) (taskDependencyGraph, error) {
 	g := newTaskDependencyGraph()
 	return g, g.buildFromVersion(versionID)
 }
 
 func newTaskDependencyGraph() taskDependencyGraph {
 	return taskDependencyGraph{
-		Graph:        multi.NewDirectedGraph(),
-		TasksToNodes: make(map[TVPair]graph.Node),
-		NodesToTasks: make(map[graph.Node]TVPair),
-		EdgesToDeps:  make(map[graph.Edge]TaskUnitDependency),
+		graph:        multi.NewDirectedGraph(),
+		tasksToNodes: make(map[TVPair]graph.Node),
+		nodesToTasks: make(map[graph.Node]TVPair),
+		edgesToDeps:  make(map[graph.Edge]TaskUnitDependency),
 	}
 }
 
@@ -44,12 +45,12 @@ func (g *taskDependencyGraph) buildFromVersion(versionID string) error {
 
 	taskIDToTV := make(map[string]TVPair)
 	for _, task := range tasks {
-		node := g.Graph.NewNode()
-		g.Graph.AddNode(node)
+		node := g.graph.NewNode()
+		g.graph.AddNode(node)
 
 		taskTV := TVPair{TaskName: task.DisplayName, Variant: task.BuildVariant}
-		g.TasksToNodes[taskTV] = node
-		g.NodesToTasks[node] = taskTV
+		g.tasksToNodes[taskTV] = node
+		g.nodesToTasks[node] = taskTV
 		taskIDToTV[task.Id] = taskTV
 	}
 
@@ -57,10 +58,10 @@ func (g *taskDependencyGraph) buildFromVersion(versionID string) error {
 		dependentTaskTV := TVPair{TaskName: task.DisplayName, Variant: task.BuildVariant}
 		for _, dep := range task.DependsOn {
 			dependedOnTaskTV := taskIDToTV[dep.TaskId]
-			line := g.Graph.NewLine(g.TasksToNodes[dependedOnTaskTV], g.TasksToNodes[dependentTaskTV])
-			g.Graph.SetLine(line)
+			line := g.graph.NewLine(g.tasksToNodes[dependedOnTaskTV], g.tasksToNodes[dependentTaskTV])
+			g.graph.SetLine(line)
 
-			g.EdgesToDeps[g.Graph.Edge(g.TasksToNodes[dependedOnTaskTV].ID(), g.TasksToNodes[dependentTaskTV].ID())] = TaskUnitDependency{
+			g.edgesToDeps[g.graph.Edge(g.tasksToNodes[dependedOnTaskTV].ID(), g.tasksToNodes[dependentTaskTV].ID())] = TaskUnitDependency{
 				Name:    dependedOnTaskTV.TaskName,
 				Variant: dependedOnTaskTV.Variant,
 				Status:  dep.Status,
@@ -76,10 +77,10 @@ func (g *taskDependencyGraph) buildFromProject(p *Project) {
 	var taskTVs []TVPair
 
 	for _, task := range tasks {
-		node := g.Graph.NewNode()
-		g.Graph.AddNode(node)
-		g.TasksToNodes[task.ToTVPair()] = node
-		g.NodesToTasks[node] = task.ToTVPair()
+		node := g.graph.NewNode()
+		g.graph.AddNode(node)
+		g.tasksToNodes[task.ToTVPair()] = node
+		g.nodesToTasks[node] = task.ToTVPair()
 
 		taskTVs = append(taskTVs, task.ToTVPair())
 	}
@@ -87,10 +88,10 @@ func (g *taskDependencyGraph) buildFromProject(p *Project) {
 	for _, task := range tasks {
 		for dep, depTasks := range dependenciesForTaskUnit(task, taskTVs) {
 			for _, depTask := range depTasks {
-				line := g.Graph.NewLine(g.TasksToNodes[task.ToTVPair()], g.TasksToNodes[depTask])
-				g.Graph.SetLine(line)
+				line := g.graph.NewLine(g.tasksToNodes[task.ToTVPair()], g.tasksToNodes[depTask])
+				g.graph.SetLine(line)
 
-				g.EdgesToDeps[g.Graph.Edge(g.TasksToNodes[task.ToTVPair()].ID(), g.TasksToNodes[depTask].ID())] = dep
+				g.edgesToDeps[g.graph.Edge(g.tasksToNodes[task.ToTVPair()].ID(), g.tasksToNodes[depTask].ID())] = dep
 			}
 		}
 	}
@@ -118,17 +119,52 @@ func dependenciesForTaskUnit(dependentTaskUnit BuildVariantTaskUnit, allTVPairs 
 	return dependencies
 }
 
-func (g *taskDependencyGraph) HasCycles() bool {
-	return len(topo.TarjanSCC(g.Graph)) < g.Graph.Nodes().Len()
+func (g *taskDependencyGraph) addEdge(dependentTask, dependedOnTask TVPair) {
+	dependentNode := g.tasksToNodes[dependentTask]
+	dependedOnNode := g.tasksToNodes[dependedOnTask]
+	if dependentNode == nil || dependedOnNode == nil {
+		return
+	}
+
+	line := g.graph.NewLine(dependentNode, dependedOnNode)
+	g.graph.SetLine(line)
+}
+
+func (g *taskDependencyGraph) tasksDependingOnTask(t TVPair) []TVPair {
+	dependedOnNode := g.tasksToNodes[t]
+	if dependedOnNode == nil {
+		return nil
+	}
+
+	var dependentTasks []TVPair
+	nodes := g.graph.To(dependedOnNode.ID())
+	for nodes.Next() {
+		dependentTasks = append(dependentTasks, g.nodesToTasks[nodes.Node()])
+	}
+
+	return dependentTasks
+}
+
+func (g *taskDependencyGraph) getDependencyEdge(dependentTask, dependedOnTask TVPair) (TaskUnitDependency, error) {
+	edge := g.graph.Edge(g.tasksToNodes[dependentTask].ID(), g.tasksToNodes[dependedOnTask].ID())
+	if edge == nil {
+		return TaskUnitDependency{}, errors.Errorf("'%s' has no dependency on '%s'", dependentTask, dependedOnTask)
+	}
+
+	return g.edgesToDeps[edge], nil
 }
 
 func (g *taskDependencyGraph) Cycles() [][]TVPair {
 	var cycles [][]TVPair
-	stronglyConnectedComponenets := topo.TarjanSCC(g.Graph)
+	stronglyConnectedComponenets := topo.TarjanSCC(g.graph)
 	for _, scc := range stronglyConnectedComponenets {
+		if len(scc) <= 1 {
+			continue
+		}
+
 		var cycle []TVPair
 		for _, node := range scc {
-			taskInCycle := g.NodesToTasks[node]
+			taskInCycle := g.nodesToTasks[node]
 			cycle = append(cycle, taskInCycle)
 		}
 		cycles = append(cycles, cycle)
@@ -137,37 +173,20 @@ func (g *taskDependencyGraph) Cycles() [][]TVPair {
 	return cycles
 }
 
-func (g *taskDependencyGraph) AddEdge(dependentTask, dependedOnTask TVPair) {
-	dependentNode := g.TasksToNodes[dependentTask]
-	dependedOnNode := g.TasksToNodes[dependedOnTask]
-	if dependentNode == nil || dependedOnNode == nil {
-		return
+func (g *taskDependencyGraph) DepthFirstSearch(start, target TVPair, traverseEdge func(dependentTask, dependedOnTask TVPair, dep TaskUnitDependency) bool) bool {
+	traversal := traverse.DepthFirst{
+		Traverse: func(e graph.Edge) bool {
+			if traverseEdge == nil {
+				return true
+			}
+
+			dependedOn := g.nodesToTasks[e.From()]
+			dependent := g.nodesToTasks[e.To()]
+			dep := g.edgesToDeps[e]
+
+			return traverseEdge(dependent, dependedOn, dep)
+		},
 	}
 
-	line := g.Graph.NewLine(dependentNode, dependedOnNode)
-	g.Graph.SetLine(line)
-}
-
-func (g *taskDependencyGraph) TasksDependingOnTask(t TVPair) []TVPair {
-	dependedOnNode := g.TasksToNodes[t]
-	if dependedOnNode == nil {
-		return nil
-	}
-
-	var dependentTasks []TVPair
-	nodes := g.Graph.To(dependedOnNode.ID())
-	for nodes.Next() {
-		dependentTasks = append(dependentTasks, g.NodesToTasks[nodes.Node()])
-	}
-
-	return dependentTasks
-}
-
-func (g *taskDependencyGraph) GetDependencyEdge(dependentTask, dependedOnTask TVPair) (TaskUnitDependency, error) {
-	edge := g.Graph.Edge(g.TasksToNodes[dependentTask].ID(), g.TasksToNodes[dependedOnTask].ID())
-	if edge == nil {
-		return TaskUnitDependency{}, errors.Errorf("'%s' has no dependency on '%s'", dependentTask, dependedOnTask)
-	}
-
-	return g.EdgesToDeps[edge], nil
+	return traversal.Walk(g.graph, g.tasksToNodes[start], func(n graph.Node) bool { return g.nodesToTasks[n] == target }) == nil
 }

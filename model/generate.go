@@ -377,34 +377,34 @@ func addDependencies(t *task.Task, newTasks task.Tasks) error {
 	if err != nil {
 		return errors.Wrap(err, "making new dependency graph")
 	}
-	if dependencyGraph.HasCycles() {
+	if len(dependencyGraph.Cycles()) > 0 {
 		return errors.New("adding dependencies would create dependency cycles")
 	}
 
 	return saveDependenciesToTasks(t, newTasks, dependencyGraph)
 }
 
-func simulateNewDependencyGraph(t *task.Task, newTasksToDependOn task.Tasks) (TaskDependencyGraph, error) {
+func simulateNewDependencyGraph(t *task.Task, newTasksToDependOn task.Tasks) (taskDependencyGraph, error) {
 	taskTV := TVPair{TaskName: t.DisplayName, Variant: t.BuildVariant}
-	dependencyGraph, err := NewDependencyGraphFromVersion(t.Version)
+	dependencyGraph, err := newDependencyGraphFromVersion(t.Version)
 	if err != nil {
-		return TaskDependencyGraph{}, errors.Wrapf(err, "creating dependency graph for version '%s'", t.Version)
+		return taskDependencyGraph{}, errors.Wrapf(err, "creating dependency graph for version '%s'", t.Version)
 	}
 
-	dependentTVs := dependencyGraph.TasksDependingOnTask(taskTV)
+	dependentTVs := dependencyGraph.tasksDependingOnTask(taskTV)
 	for _, newTask := range newTasksToDependOn {
 		for _, dependentTV := range dependentTVs {
-			dependencyGraph.AddEdge(dependentTV, TVPair{TaskName: newTask.DisplayName, Variant: newTask.BuildVariant})
+			dependencyGraph.addEdge(dependentTV, TVPair{TaskName: newTask.DisplayName, Variant: newTask.BuildVariant})
 		}
 	}
 
 	return dependencyGraph, nil
 }
 
-func saveDependenciesToTasks(dependedOnTask *task.Task, newTasksToDependOn task.Tasks, dependencyGraph TaskDependencyGraph) error {
-	for _, dependentTV := range dependencyGraph.TasksDependingOnTask(TVPair{TaskName: dependedOnTask.DisplayName, Variant: dependedOnTask.DisplayName}) {
+func saveDependenciesToTasks(dependedOnTask *task.Task, newTasksToDependOn task.Tasks, dependencyGraph taskDependencyGraph) error {
+	for _, dependentTV := range dependencyGraph.tasksDependingOnTask(TVPair{TaskName: dependedOnTask.DisplayName, Variant: dependedOnTask.DisplayName}) {
 		dependedOnTV := TVPair{TaskName: dependedOnTask.DisplayName, Variant: dependedOnTask.BuildVariant}
-		dep, err := dependencyGraph.GetDependencyEdge(dependentTV, dependedOnTV)
+		dep, err := dependencyGraph.getDependencyEdge(dependentTV, dependedOnTV)
 		if err != nil {
 			return errors.Errorf("dependency from '%s' and '%s' not found", dependentTV, dependedOnTV)
 		}
