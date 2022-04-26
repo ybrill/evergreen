@@ -168,7 +168,7 @@ func (g *taskDependencyGraph) Cycles() [][]TVPair {
 	return cycles
 }
 
-func (g *taskDependencyGraph) DepthFirstSearch(start, target TVPair, traverseEdge func(dependentTask, dependedOnTask TVPair, dep TaskUnitDependency) bool) bool {
+func (g *taskDependencyGraph) DepthFirstSearch(start, target TVPair, traverseEdge func(dependentTask, dependedOnTask TVPair) bool) bool {
 	traversal := traverse.DepthFirst{
 		Traverse: func(e graph.Edge) bool {
 			if traverseEdge == nil {
@@ -177,9 +177,8 @@ func (g *taskDependencyGraph) DepthFirstSearch(start, target TVPair, traverseEdg
 
 			dependedOn := g.nodesToTasks[e.From()]
 			dependent := g.nodesToTasks[e.To()]
-			dep := g.edgesToDeps[e]
 
-			return traverseEdge(dependent, dependedOn, dep)
+			return traverseEdge(dependent, dependedOn)
 		},
 	}
 

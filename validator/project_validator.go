@@ -1688,9 +1688,16 @@ func validateTVDependsOnTV(dependentTask, dependedOnTask model.TVPair, statuses 
 	g := model.ProjectDependencyGraph(project)
 	tvTaskUnitMap := tvToTaskUnit(project)
 
-	traversal := func(dependent, dependedOn model.TVPair, dep model.TaskUnitDependency) bool {
+	traversal := func(dependent, dependedOn model.TVPair) bool {
 		dependedOnTaskUnit := tvTaskUnitMap[dependedOn]
 		dependentTaskUnit := tvTaskUnitMap[dependent]
+
+		var dep model.TaskUnitDependency
+		for _, dependency := range dependentTaskUnit.DependsOn {
+			if dependency.Name == dependedOn.TaskName && dependency.Variant == dependedOn.Variant {
+				dep = dependency
+			}
+		}
 
 		// TODO rethink this comment
 		if !dependentTaskUnit.SkipOnPatchBuild() && !dependentTaskUnit.SkipOnNonGitTagBuild() &&
@@ -1716,7 +1723,7 @@ func validateTVDependsOnTV(dependentTask, dependedOnTask model.TVPair, statuses 
 	}
 
 	if found := g.DepthFirstSearch(dependentTask, dependedOnTask, traversal); !found {
-		dependentBVTask := project.FindTaskForVariant(dependentTask.TaskName, dependentTask.Variant)
+		dependentBVTask := tvTaskUnitMap[dependentTask]
 		requireOnPatches := !dependentBVTask.SkipOnPatchBuild() && !dependentBVTask.SkipOnNonGitTagBuild()
 		requireOnNonPatches := !dependentBVTask.SkipOnNonPatchBuild() && !dependentBVTask.SkipOnNonGitTagBuild()
 		requireOnGitTag := !dependentBVTask.SkipOnNonPatchBuild() && !dependentBVTask.SkipOnGitTagBuild()
