@@ -216,8 +216,8 @@ func validateNewGraph(t *task.Task, tasksToBlock []task.Task) error {
 
 	for _, taskToBlock := range tasksToBlock {
 		dependencyGraph.AddEdge(
-			task.TaskNode{Name: taskToBlock.DisplayName, Variant: taskToBlock.BuildVariant},
-			task.TaskNode{Name: t.DisplayName, Variant: t.BuildVariant},
+			taskToBlock.ToTaskNode(),
+			t.ToTaskNode(),
 			task.DependencyEdge{},
 		)
 	}

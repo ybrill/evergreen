@@ -390,12 +390,12 @@ func simulateNewDependencyGraph(t *task.Task, newTasksToDependOn task.Tasks) (ta
 		return dependencyGraph, errors.Wrapf(err, "creating dependency graph for version '%s'", t.Version)
 	}
 
-	dependents := dependencyGraph.TasksDependingOnTask(task.TaskNode{Name: t.DisplayName, Variant: t.BuildVariant})
+	dependents := dependencyGraph.TasksDependingOnTask(t.ToTaskNode())
 	for _, newTask := range newTasksToDependOn {
 		for _, dependent := range dependents {
 			dependencyGraph.AddEdge(
 				dependent,
-				task.TaskNode{Name: newTask.DisplayName, Variant: newTask.BuildVariant},
+				newTask.ToTaskNode(),
 				task.DependencyEdge{},
 			)
 		}

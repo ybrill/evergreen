@@ -253,10 +253,10 @@ func (bvt *BuildVariantTaskUnit) IsDisabled() bool {
 	return utility.FromBoolPtr(bvt.Disable)
 }
 
-func (bvt *BuildVariantTaskUnit) ToTVPair() TVPair {
-	return TVPair{
-		TaskName: bvt.Name,
-		Variant:  bvt.Variant,
+func (bvt *BuildVariantTaskUnit) ToTaskNode() task.TaskNode {
+	return task.TaskNode{
+		Name:    bvt.Name,
+		Variant: bvt.Variant,
 	}
 }
 
@@ -1791,18 +1791,17 @@ func (p *Project) GetDisplayTask(variant, name string) *patch.DisplayTask {
 func (p *Project) DependencyGraph() task.DependencyGraph {
 	tasks := p.FindAllBuildVariantTasks()
 	g := task.NewDependencyGraph()
-	var taskTVs []TVPair
+	var taskNodes []task.TaskNode
 
 	for _, t := range tasks {
-		g.AddTaskNode(task.TaskNode{Name: t.Name, Variant: t.Variant})
-		taskTVs = append(taskTVs, t.ToTVPair())
+		g.AddTaskNode(t.ToTaskNode())
+		taskNodes = append(taskNodes, t.ToTaskNode())
 	}
 
 	for _, t := range tasks {
-		tNode := task.TaskNode{Name: t.Name, Variant: t.Variant}
-		for dep, depTasks := range dependenciesForTaskUnit(t, taskTVs) {
+		for dep, depTasks := range dependenciesForTaskUnit(t, taskNodes) {
 			for _, depNode := range depTasks {
-				g.AddEdge(tNode, depNode, dep)
+				g.AddEdge(t.ToTaskNode(), depNode, dep)
 			}
 		}
 	}
@@ -1812,7 +1811,7 @@ func (p *Project) DependencyGraph() task.DependencyGraph {
 }
 
 // dependenciesForTaskUnit returns a map of edges to the task nodes that dependentTaskUnit depends on.
-func dependenciesForTaskUnit(dependentTaskUnit BuildVariantTaskUnit, allTVPairs []TVPair) map[task.DependencyEdge][]task.TaskNode {
+func dependenciesForTaskUnit(dependentTaskUnit BuildVariantTaskUnit, allNodes []task.TaskNode) map[task.DependencyEdge][]task.TaskNode {
 	dependencies := make(map[task.DependencyEdge][]task.TaskNode)
 	for _, dep := range dependentTaskUnit.DependsOn {
 		// Use the current variant if none is specified.
@@ -1820,12 +1819,11 @@ func dependenciesForTaskUnit(dependentTaskUnit BuildVariantTaskUnit, allTVPairs 
 			dep.Variant = dependentTaskUnit.Variant
 		}
 
-		for _, tv := range allTVPairs {
-			depNode := task.TaskNode{Variant: tv.Variant, Name: tv.TaskName}
-			if tv != dependentTaskUnit.ToTVPair() &&
-				(dep.Variant == AllVariants || depNode.Variant == dep.Variant) &&
-				(dep.Name == AllDependencies || depNode.Name == dep.Name) {
-				dependencies[task.DependencyEdge{Status: dep.Status}] = append(dependencies[task.DependencyEdge{Status: dep.Status}], depNode)
+		for _, node := range allNodes {
+			if node != dependentTaskUnit.ToTaskNode() &&
+				(dep.Variant == AllVariants || node.Variant == dep.Variant) &&
+				(dep.Name == AllDependencies || node.Name == dep.Name) {
+				dependencies[task.DependencyEdge{Status: dep.Status}] = append(dependencies[task.DependencyEdge{Status: dep.Status}], node)
 			}
 		}
 	}
