@@ -333,7 +333,7 @@ func validateAllDependenciesSpec(project *model.Project) ValidationErrors {
 // validateDependencyGraph returns an non-nil ValidationErrors if the dependency graph contains cycles.
 func validateDependencyGraph(project *model.Project) ValidationErrors {
 	var errs ValidationErrors
-	graph := model.NewDependencyGraphFromProject(project)
+	graph := model.ProjectDependencyGraph(project)
 	for _, cycle := range graph.Cycles() {
 		var tvStrings []string
 		for _, task := range cycle {
@@ -1685,7 +1685,7 @@ func validateTaskSyncCommands(p *model.Project, runLong bool) ValidationErrors {
 // The dependedOnTask and every other task along the path must run on all the same requester types as the dependentTask
 // and the dependency on the dependedOnTask must be with a status in statuses, if provided.
 func validateTVDependsOnTV(dependentTask, dependedOnTask model.TVPair, statuses []string, project *model.Project) error {
-	g := model.NewDependencyGraphFromProject(project)
+	g := model.ProjectDependencyGraph(project)
 	tvTaskUnitMap := tvToTaskUnit(project)
 
 	traversal := func(dependent, dependedOn model.TVPair, dep model.TaskUnitDependency) bool {

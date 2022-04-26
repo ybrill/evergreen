@@ -16,19 +16,25 @@ type taskDependencyGraph struct {
 	edgesToDeps  map[graph.Edge]TaskUnitDependency
 }
 
-func NewDependencyGraphFromProject(p *Project) taskDependencyGraph {
-	g := newTaskDependencyGraph()
+func ProjectDependencyGraph(p *Project) taskDependencyGraph {
+	g := newDependencyGraph()
 	g.buildFromProject(p)
 
 	return g
 }
 
-func newDependencyGraphFromVersion(versionID string) (taskDependencyGraph, error) {
-	g := newTaskDependencyGraph()
-	return g, g.buildFromVersion(versionID)
+func versionDependencyGraph(versionID string) (taskDependencyGraph, error) {
+	g := newDependencyGraph()
+	tasks, err := task.FindAllTasksFromVersionWithDependencies(versionID)
+	if err != nil {
+		return g, errors.Wrapf(err, "getting tasks for version '%s'", versionID)
+	}
+
+	g.buildFromTasks(tasks)
+	return g, nil
 }
 
-func newTaskDependencyGraph() taskDependencyGraph {
+func newDependencyGraph() taskDependencyGraph {
 	return taskDependencyGraph{
 		graph:        multi.NewDirectedGraph(),
 		tasksToNodes: make(map[TVPair]graph.Node),
@@ -37,20 +43,11 @@ func newTaskDependencyGraph() taskDependencyGraph {
 	}
 }
 
-func (g *taskDependencyGraph) buildFromVersion(versionID string) error {
-	tasks, err := task.FindAllTasksFromVersionWithDependencies(versionID)
-	if err != nil {
-		return errors.Wrapf(err, "getting tasks for version '%s'", versionID)
-	}
-
+func (g *taskDependencyGraph) buildFromTasks(tasks []task.Task) error {
 	taskIDToTV := make(map[string]TVPair)
 	for _, task := range tasks {
-		node := g.graph.NewNode()
-		g.graph.AddNode(node)
-
 		taskTV := TVPair{TaskName: task.DisplayName, Variant: task.BuildVariant}
-		g.tasksToNodes[taskTV] = node
-		g.nodesToTasks[node] = taskTV
+		g.addTaskNode(taskTV)
 		taskIDToTV[task.Id] = taskTV
 	}
 
@@ -58,14 +55,11 @@ func (g *taskDependencyGraph) buildFromVersion(versionID string) error {
 		dependentTaskTV := TVPair{TaskName: task.DisplayName, Variant: task.BuildVariant}
 		for _, dep := range task.DependsOn {
 			dependedOnTaskTV := taskIDToTV[dep.TaskId]
-			line := g.graph.NewLine(g.tasksToNodes[dependedOnTaskTV], g.tasksToNodes[dependentTaskTV])
-			g.graph.SetLine(line)
-
-			g.edgesToDeps[g.graph.Edge(g.tasksToNodes[dependedOnTaskTV].ID(), g.tasksToNodes[dependentTaskTV].ID())] = TaskUnitDependency{
+			g.addEdge(dependentTaskTV, dependedOnTaskTV, TaskUnitDependency{
 				Name:    dependedOnTaskTV.TaskName,
 				Variant: dependedOnTaskTV.Variant,
 				Status:  dep.Status,
-			}
+			})
 		}
 	}
 
@@ -77,21 +71,14 @@ func (g *taskDependencyGraph) buildFromProject(p *Project) {
 	var taskTVs []TVPair
 
 	for _, task := range tasks {
-		node := g.graph.NewNode()
-		g.graph.AddNode(node)
-		g.tasksToNodes[task.ToTVPair()] = node
-		g.nodesToTasks[node] = task.ToTVPair()
-
+		g.addTaskNode(task.ToTVPair())
 		taskTVs = append(taskTVs, task.ToTVPair())
 	}
 
 	for _, task := range tasks {
 		for dep, depTasks := range dependenciesForTaskUnit(task, taskTVs) {
 			for _, depTask := range depTasks {
-				line := g.graph.NewLine(g.tasksToNodes[task.ToTVPair()], g.tasksToNodes[depTask])
-				g.graph.SetLine(line)
-
-				g.edgesToDeps[g.graph.Edge(g.tasksToNodes[task.ToTVPair()].ID(), g.tasksToNodes[depTask].ID())] = dep
+				g.addEdge(task.ToTVPair(), depTask, dep)
 			}
 		}
 	}
@@ -119,7 +106,14 @@ func dependenciesForTaskUnit(dependentTaskUnit BuildVariantTaskUnit, allTVPairs 
 	return dependencies
 }
 
-func (g *taskDependencyGraph) addEdge(dependentTask, dependedOnTask TVPair) {
+func (g *taskDependencyGraph) addTaskNode(task TVPair) {
+	node := g.graph.NewNode()
+	g.graph.AddNode(node)
+	g.tasksToNodes[task] = node
+	g.nodesToTasks[node] = task
+}
+
+func (g *taskDependencyGraph) addEdge(dependentTask, dependedOnTask TVPair, dep TaskUnitDependency) {
 	dependentNode := g.tasksToNodes[dependentTask]
 	dependedOnNode := g.tasksToNodes[dependedOnTask]
 	if dependentNode == nil || dependedOnNode == nil {
@@ -128,6 +122,7 @@ func (g *taskDependencyGraph) addEdge(dependentTask, dependedOnTask TVPair) {
 
 	line := g.graph.NewLine(dependentNode, dependedOnNode)
 	g.graph.SetLine(line)
+	g.edgesToDeps[g.graph.Edge(g.tasksToNodes[dependentTask].ID(), g.tasksToNodes[dependedOnTask].ID())] = dep
 }
 
 func (g *taskDependencyGraph) tasksDependingOnTask(t TVPair) []TVPair {

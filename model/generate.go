@@ -385,16 +385,19 @@ func addDependencies(t *task.Task, newTasks task.Tasks) error {
 }
 
 func simulateNewDependencyGraph(t *task.Task, newTasksToDependOn task.Tasks) (taskDependencyGraph, error) {
-	taskTV := TVPair{TaskName: t.DisplayName, Variant: t.BuildVariant}
-	dependencyGraph, err := newDependencyGraphFromVersion(t.Version)
+	dependencyGraph, err := versionDependencyGraph(t.Version)
 	if err != nil {
 		return taskDependencyGraph{}, errors.Wrapf(err, "creating dependency graph for version '%s'", t.Version)
 	}
 
-	dependentTVs := dependencyGraph.tasksDependingOnTask(taskTV)
+	dependentTVs := dependencyGraph.tasksDependingOnTask(TVPair{TaskName: t.DisplayName, Variant: t.BuildVariant})
 	for _, newTask := range newTasksToDependOn {
 		for _, dependentTV := range dependentTVs {
-			dependencyGraph.addEdge(dependentTV, TVPair{TaskName: newTask.DisplayName, Variant: newTask.BuildVariant})
+			dependencyGraph.addEdge(
+				dependentTV,
+				TVPair{TaskName: newTask.DisplayName, Variant: newTask.BuildVariant},
+				TaskUnitDependency{},
+			)
 		}
 	}
 
