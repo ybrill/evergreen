@@ -384,19 +384,19 @@ func addDependencies(t *task.Task, newTasks task.Tasks) error {
 	return saveDependenciesToTasks(t, newTasks, dependencyGraph)
 }
 
-func simulateNewDependencyGraph(t *task.Task, newTasksToDependOn task.Tasks) (taskDependencyGraph, error) {
-	dependencyGraph, err := versionDependencyGraph(t.Version)
+func simulateNewDependencyGraph(t *task.Task, newTasksToDependOn task.Tasks) (task.DependencyGraph, error) {
+	dependencyGraph, err := task.VersionDependencyGraph(t.Version)
 	if err != nil {
-		return taskDependencyGraph{}, errors.Wrapf(err, "creating dependency graph for version '%s'", t.Version)
+		return dependencyGraph, errors.Wrapf(err, "creating dependency graph for version '%s'", t.Version)
 	}
 
-	dependentTVs := dependencyGraph.tasksDependingOnTask(TVPair{TaskName: t.DisplayName, Variant: t.BuildVariant})
+	dependents := dependencyGraph.TasksDependingOnTask(task.TaskNode{Name: t.DisplayName, Variant: t.BuildVariant})
 	for _, newTask := range newTasksToDependOn {
-		for _, dependentTV := range dependentTVs {
-			dependencyGraph.addEdge(
-				dependentTV,
-				TVPair{TaskName: newTask.DisplayName, Variant: newTask.BuildVariant},
-				TaskUnitDependency{},
+		for _, dependent := range dependents {
+			dependencyGraph.AddEdge(
+				dependent,
+				task.TaskNode{Name: newTask.DisplayName, Variant: newTask.BuildVariant},
+				task.DependencyEdge{},
 			)
 		}
 	}
@@ -404,20 +404,20 @@ func simulateNewDependencyGraph(t *task.Task, newTasksToDependOn task.Tasks) (ta
 	return dependencyGraph, nil
 }
 
-func saveDependenciesToTasks(dependedOnTask *task.Task, newTasksToDependOn task.Tasks, dependencyGraph taskDependencyGraph) error {
-	for _, dependentTV := range dependencyGraph.tasksDependingOnTask(TVPair{TaskName: dependedOnTask.DisplayName, Variant: dependedOnTask.DisplayName}) {
-		dependedOnTV := TVPair{TaskName: dependedOnTask.DisplayName, Variant: dependedOnTask.BuildVariant}
-		dep, err := dependencyGraph.getDependencyEdge(dependentTV, dependedOnTV)
+func saveDependenciesToTasks(dependedOnTask *task.Task, newTasksToDependOn task.Tasks, dependencyGraph task.DependencyGraph) error {
+	for _, dependent := range dependencyGraph.TasksDependingOnTask(task.TaskNode{Name: dependedOnTask.DisplayName, Variant: dependedOnTask.DisplayName}) {
+		dependedOn := task.TaskNode{Name: dependedOnTask.DisplayName, Variant: dependedOnTask.BuildVariant}
+		dep, err := dependencyGraph.GetDependencyEdge(dependent, dependedOn)
 		if err != nil {
-			return errors.Errorf("dependency from '%s' and '%s' not found", dependentTV, dependedOnTV)
+			return errors.Errorf("dependency from '%s' and '%s' not found", dependent, dependedOn)
 		}
 
-		depTask, err := task.FindTaskForVersion(dependedOnTask.Version, dependentTV.TaskName, dependentTV.Variant)
+		depTask, err := task.FindTaskForVersion(dependedOnTask.Version, dependent.Name, dependent.Variant)
 		if err != nil {
 			return errors.Wrap(err, "getting dependent task")
 		}
 		if depTask == nil {
-			return errors.Errorf("dependent task '%s' not found in version '%s'", dependentTV, dependedOnTask.Version)
+			return errors.Errorf("dependent task '%s' not found in version '%s'", dependent, dependedOnTask.Version)
 		}
 
 		for _, newTask := range newTasksToDependOn {

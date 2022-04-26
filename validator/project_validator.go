@@ -13,6 +13,7 @@ import (
 	"github.com/evergreen-ci/evergreen/agent/command"
 	"github.com/evergreen-ci/evergreen/model"
 	"github.com/evergreen-ci/evergreen/model/distro"
+	"github.com/evergreen-ci/evergreen/model/task"
 	"github.com/evergreen-ci/evergreen/thirdparty"
 	"github.com/evergreen-ci/evergreen/util"
 	"github.com/evergreen-ci/utility"
@@ -333,7 +334,7 @@ func validateAllDependenciesSpec(project *model.Project) ValidationErrors {
 // validateDependencyGraph returns an non-nil ValidationErrors if the dependency graph contains cycles.
 func validateDependencyGraph(project *model.Project) ValidationErrors {
 	var errs ValidationErrors
-	graph := model.ProjectDependencyGraph(project)
+	graph := project.DependencyGraph()
 	for _, cycle := range graph.Cycles() {
 		var tvStrings []string
 		for _, task := range cycle {
@@ -1685,16 +1686,18 @@ func validateTaskSyncCommands(p *model.Project, runLong bool) ValidationErrors {
 // The dependedOnTask and every other task along the path must run on all the same requester types as the dependentTask
 // and the dependency on the dependedOnTask must be with a status in statuses, if provided.
 func validateTVDependsOnTV(dependentTask, dependedOnTask model.TVPair, statuses []string, project *model.Project) error {
-	g := model.ProjectDependencyGraph(project)
+	g := project.DependencyGraph()
 	tvTaskUnitMap := tvToTaskUnit(project)
 
-	traversal := func(dependent, dependedOn model.TVPair) bool {
-		dependedOnTaskUnit := tvTaskUnitMap[dependedOn]
-		dependentTaskUnit := tvTaskUnitMap[dependent]
+	dependentNode := task.TaskNode{Name: dependentTask.TaskName, Variant: dependentTask.Variant}
+	dependedOnNode := task.TaskNode{Name: dependedOnTask.TaskName, Variant: dependedOnTask.Variant}
+	traversal := func(dependent, dependedOn task.TaskNode, _ task.DependencyEdge) bool {
+		dependedOnTaskUnit := tvTaskUnitMap[model.TVPair{TaskName: dependedOn.Name, Variant: dependedOn.Variant}]
+		dependentTaskUnit := tvTaskUnitMap[model.TVPair{TaskName: dependent.Name, Variant: dependent.Variant}]
 
 		var dep model.TaskUnitDependency
 		for _, dependency := range dependentTaskUnit.DependsOn {
-			if dependency.Name == dependedOn.TaskName && dependency.Variant == dependedOn.Variant {
+			if dependency.Name == dependedOn.Name && dependency.Variant == dependedOn.Variant {
 				dep = dependency
 			}
 		}
@@ -1715,14 +1718,14 @@ func validateTVDependsOnTV(dependentTask, dependedOnTask model.TVPair, statuses 
 			return false
 		}
 
-		if statuses != nil && dependedOn == dependedOnTask {
+		if statuses != nil && dependedOn == dependedOnNode {
 			return utility.StringSliceContains(statuses, dep.Status)
 		}
 
 		return true
 	}
 
-	if found := g.DepthFirstSearch(dependentTask, dependedOnTask, traversal); !found {
+	if found := g.DepthFirstSearch(dependentNode, dependedOnNode, traversal); !found {
 		dependentBVTask := tvTaskUnitMap[dependentTask]
 		requireOnPatches := !dependentBVTask.SkipOnPatchBuild() && !dependentBVTask.SkipOnNonGitTagBuild()
 		requireOnNonPatches := !dependentBVTask.SkipOnNonPatchBuild() && !dependentBVTask.SkipOnNonGitTagBuild()

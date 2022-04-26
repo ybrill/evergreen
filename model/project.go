@@ -1788,6 +1788,51 @@ func (p *Project) GetDisplayTask(variant, name string) *patch.DisplayTask {
 	return nil
 }
 
+func (p *Project) DependencyGraph() task.DependencyGraph {
+	tasks := p.FindAllBuildVariantTasks()
+	g := task.NewDependencyGraph()
+	var taskTVs []TVPair
+
+	for _, t := range tasks {
+		g.AddTaskNode(task.TaskNode{Name: t.Name, Variant: t.Variant})
+		taskTVs = append(taskTVs, t.ToTVPair())
+	}
+
+	for _, t := range tasks {
+		tNode := task.TaskNode{Name: t.Name, Variant: t.Variant}
+		for dep, depTasks := range dependenciesForTaskUnit(t, taskTVs) {
+			for _, depNode := range depTasks {
+				g.AddEdge(tNode, depNode, dep)
+			}
+		}
+	}
+
+	return g
+
+}
+
+// dependenciesForTaskUnit returns a map of edges to the task nodes that dependentTaskUnit depends on.
+func dependenciesForTaskUnit(dependentTaskUnit BuildVariantTaskUnit, allTVPairs []TVPair) map[task.DependencyEdge][]task.TaskNode {
+	dependencies := make(map[task.DependencyEdge][]task.TaskNode)
+	for _, dep := range dependentTaskUnit.DependsOn {
+		// Use the current variant if none is specified.
+		if dep.Variant == "" {
+			dep.Variant = dependentTaskUnit.Variant
+		}
+
+		for _, tv := range allTVPairs {
+			depNode := task.TaskNode{Variant: tv.Variant, Name: tv.TaskName}
+			if tv != dependentTaskUnit.ToTVPair() &&
+				(dep.Variant == AllVariants || depNode.Variant == dep.Variant) &&
+				(dep.Name == AllDependencies || depNode.Name == dep.Name) {
+				dependencies[task.DependencyEdge{Status: dep.Status}] = append(dependencies[task.DependencyEdge{Status: dep.Status}], depNode)
+			}
+		}
+	}
+
+	return dependencies
+}
+
 // FetchVersionsBuildsAndTasks is a helper function to fetch a group of versions and their associated builds and tasks.
 // Returns the versions themselves, a map of version id -> the builds that are a part of the version (unsorted)
 // and a map of build ID -> each build's tasks

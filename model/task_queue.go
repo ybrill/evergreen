@@ -209,26 +209,26 @@ func shouldRunTaskGroup(taskId string, spec TaskSpec) bool {
 }
 
 func validateNewGraph(t *task.Task, tasksToBlock []task.Task) error {
-	dependencyGraph, err := versionDependencyGraph(t.Version)
+	dependencyGraph, err := task.VersionDependencyGraph(t.Version)
 	if err != nil {
 		return errors.Wrapf(err, "getting dependency graph for version '%s'", t.Version)
 	}
 
 	for _, taskToBlock := range tasksToBlock {
-		dependencyGraph.addEdge(
-			TVPair{TaskName: taskToBlock.DisplayName, Variant: taskToBlock.BuildVariant},
-			TVPair{TaskName: t.DisplayName, Variant: t.BuildVariant},
-			TaskUnitDependency{},
+		dependencyGraph.AddEdge(
+			task.TaskNode{Name: taskToBlock.DisplayName, Variant: taskToBlock.BuildVariant},
+			task.TaskNode{Name: t.DisplayName, Variant: t.BuildVariant},
+			task.DependencyEdge{},
 		)
 	}
 
 	catcher := grip.NewBasicCatcher()
 	for _, cycle := range dependencyGraph.Cycles() {
-		taskNames := make([]string, 0, len(cycle))
-		for _, task := range cycle {
-			taskNames = append(taskNames, task.TaskName)
+		taskStrings := make([]string, 0, len(cycle))
+		for _, t := range cycle {
+			taskStrings = append(taskStrings, t.String())
 		}
-		catcher.Errorf("task dependency cycle detected: %s", strings.Join(taskNames, ", "))
+		catcher.Errorf("task dependency cycle detected: %s", strings.Join(taskStrings, ", "))
 	}
 
 	return catcher.Resolve()
