@@ -123,7 +123,7 @@ func (t *TaskQueueItem) ToTaskNode() task.TaskNode {
 	return task.TaskNode{
 		Name:    t.DisplayName,
 		Variant: t.BuildVariant,
-		Version: t.Version,
+		ID:      t.Id,
 	}
 }
 
@@ -230,16 +230,11 @@ func validateNewGraph(t *task.Task, tasksToBlock []task.Task) error {
 		)
 	}
 
-	catcher := grip.NewBasicCatcher()
-	for _, cycle := range dependencyGraph.Cycles() {
-		taskStrings := make([]string, 0, len(cycle))
-		for _, t := range cycle {
-			taskStrings = append(taskStrings, t.String())
-		}
-		catcher.Errorf("task dependency cycle detected: %s", strings.Join(taskStrings, ", "))
+	if cycles := dependencyGraph.Cycles(); len(cycles) > 0 {
+		return errors.Errorf("new dependencies create task dependency cycle(s): '%s'", cycles)
 	}
 
-	return catcher.Resolve()
+	return nil
 }
 
 func BlockTaskGroupTasks(taskID string) error {

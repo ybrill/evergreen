@@ -336,13 +336,13 @@ func validateDependencyGraph(project *model.Project) ValidationErrors {
 	var errs ValidationErrors
 	graph := project.DependencyGraph()
 	for _, cycle := range graph.Cycles() {
-		var tvStrings []string
+		var nodeStrings []string
 		for _, task := range cycle {
-			tvStrings = append(tvStrings, task.String())
+			nodeStrings = append(nodeStrings, task.String())
 		}
 		errs = append(errs, ValidationError{
 			Level:   Error,
-			Message: fmt.Sprintf("tasks [%s] form a dependency cycle", strings.Join(tvStrings, ", ")),
+			Message: fmt.Sprintf("tasks [%s] form a dependency cycle", strings.Join(nodeStrings, ", ")),
 		})
 	}
 

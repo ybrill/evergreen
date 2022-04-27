@@ -159,19 +159,10 @@ func (d *basicCachedDAGDispatcherImpl) makeQueue(items []TaskQueueItem) error {
 
 	sortedNodes, err := g.TopologicalStableSort()
 	if err != nil {
-		unorderableNodes, ok := err.(task.Unorderable)
-		if !ok {
-			return errors.Wrap(err, "sorting nodes in the graph")
-		}
+		return errors.Wrap(err, "sorting nodes in the graph")
+	}
 
-		cycles := make([][]string, 0, len(unorderableNodes))
-		for _, cycle := range unorderableNodes {
-			cycleIDs := make([]string, 0, len(cycle))
-			for _, node := range cycle {
-				cycleIDs = append(cycleIDs, nodeItemMap[node].Id)
-			}
-			cycles = append(cycles, cycleIDs)
-		}
+	if cycles := g.Cycles(); len(cycles) > 0 {
 		grip.Error(message.Fields{
 			"dispatcher": DAGDispatcher,
 			"function":   "rebuild",

@@ -2,6 +2,7 @@ package task
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/pkg/errors"
 	"gonum.org/v1/gonum/graph"
@@ -24,11 +25,16 @@ type DependencyEdge struct {
 type TaskNode struct {
 	Name    string
 	Variant string
-	Version string
+
+	ID string
 }
 
 func (t TaskNode) String() string {
-	return fmt.Sprintf("%s/%s/%s", t.Name, t.Variant, t.Version)
+	if t.ID != "" {
+		return t.ID
+	}
+
+	return fmt.Sprintf("%s/%s", t.Variant, t.Name)
 }
 
 func VersionDependencyGraph(versionID string) (DependencyGraph, error) {
@@ -113,8 +119,23 @@ func (g *DependencyGraph) GetDependencyEdge(dependentTask, dependedOnTask TaskNo
 	return g.edgesToDeps[edge], nil
 }
 
-func (g *DependencyGraph) Cycles() [][]TaskNode {
-	var cycles [][]TaskNode
+type DependencyCycles [][]TaskNode
+
+func (dc DependencyCycles) String() string {
+	cycles := make([]string, 0, len(dc))
+	for _, cycle := range dc {
+		cycleStrings := make([]string, 0, len(cycle))
+		for _, node := range cycle {
+			cycleStrings = append(cycleStrings, node.String())
+		}
+		cycles = append(cycles, "[", strings.Join(cycleStrings, ", "), "]")
+	}
+
+	return strings.Join(cycles, ", ")
+}
+
+func (g *DependencyGraph) Cycles() DependencyCycles {
+	var cycles DependencyCycles
 	stronglyConnectedComponenets := topo.TarjanSCC(g.graph)
 	for _, scc := range stronglyConnectedComponenets {
 		if len(scc) <= 1 {
@@ -150,31 +171,13 @@ func (g *DependencyGraph) DepthFirstSearch(start, target TaskNode, traverseEdge 
 	return traversal.Walk(g.graph, g.tasksToNodes[start], func(n graph.Node) bool { return g.nodesToTasks[n] == target }) == nil
 }
 
-// Unorderable is an error containing sets of unorderable nodes.
-type Unorderable [][]TaskNode
-
-// Error satisfies the error interface.
-func (e Unorderable) Error() string {
-	return fmt.Sprintf("topological ordering is prevented by '%d' cyclic components", len(e))
-}
-
 func (g *DependencyGraph) TopologicalStableSort() ([]TaskNode, error) {
 	sortedNodes, err := topo.SortStabilized(g.graph, nil)
 
-	var cycles Unorderable
 	if err != nil {
-		unorderableNodes, ok := errors.Cause(err).(topo.Unorderable)
+		_, ok := err.(topo.Unorderable)
 		if !ok {
 			return nil, errors.Wrap(err, "sorting the graph")
-		}
-
-		cycles = make(Unorderable, 0, len(unorderableNodes))
-		for _, cycle := range unorderableNodes {
-			cycleNodes := make([]TaskNode, 0, len(cycle))
-			for _, node := range cycle {
-				cycleNodes = append(cycleNodes, g.nodesToTasks[node])
-			}
-			cycles = append(cycles, cycleNodes)
 		}
 	}
 
@@ -185,5 +188,5 @@ func (g *DependencyGraph) TopologicalStableSort() ([]TaskNode, error) {
 		}
 	}
 
-	return sortedTasks, cycles
+	return sortedTasks, nil
 }

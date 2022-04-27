@@ -3064,7 +3064,7 @@ func (t *Task) ToTaskNode() TaskNode {
 	return TaskNode{
 		Name:    t.DisplayName,
 		Variant: t.BuildVariant,
-		Version: t.Version,
+		ID:      t.Id,
 	}
 }
 
