@@ -106,7 +106,7 @@ func setTaskActivationForBuilds(buildIds []string, active bool, ignoreTasks []st
 		if err != nil {
 			return errors.Wrap(err, "getting tasks to deactivate")
 		}
-		dependOn, err := task.GetRecursiveDependenciesUp(tasks, nil)
+		dependOn, err := task.GetDependenciesUp(tasks)
 		if err != nil {
 			return errors.Wrap(err, "getting recursive dependencies")
 		}
@@ -168,7 +168,7 @@ func TryMarkVersionStarted(versionId string, startTime time.Time) error {
 }
 
 func SetTaskPriority(t task.Task, priority int64, caller string) error {
-	depTasks, err := task.GetRecursiveDependenciesUp([]task.Task{t}, nil)
+	depTasks, err := task.GetDependenciesUp([]task.Task{t})
 	if err != nil {
 		return errors.Wrap(err, "getting task dependencies")
 	}

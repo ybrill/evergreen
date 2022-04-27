@@ -1400,7 +1400,7 @@ func ActivateTasksByIdsWithDependencies(ids []string, caller string) error {
 	if err != nil {
 		return errors.Wrap(err, "getting tasks for activation")
 	}
-	dependOn, err := GetRecursiveDependenciesUp(tasks, nil)
+	dependOn, err := GetDependenciesUp(tasks)
 	if err != nil {
 		return errors.Wrap(err, "getting recursive dependencies")
 	}
@@ -1869,55 +1869,69 @@ func (t *Task) SetDisabledPriority(user string) error {
 	return t.DeactivateTask(user)
 }
 
-// GetRecursiveDependenciesUp returns all tasks recursively depended upon
-// that are not in the original task slice (this includes earlier tasks in task groups, if applicable).
-// depCache should originally be nil. We assume there are no dependency cycles.
-func GetRecursiveDependenciesUp(tasks []Task, depCache map[string]Task) ([]Task, error) {
-	if depCache == nil {
-		depCache = make(map[string]Task)
+// GetDependenciesUp returns all tasks recursively depended upon by any task in tasks.
+func GetDependenciesUp(tasks []Task) ([]Task, error) {
+	versionSet := make(map[string]bool)
+	for _, task := range tasks {
+		versionSet[task.Version] = true
 	}
-	for _, t := range tasks {
-		depCache[t.Id] = t
+	var versions []string
+	for v := range versionSet {
+		versions = append(versions, v)
+	}
+	allTasks, err := FindWithFields(ByVersions(versions), IdKey, DependsOnKey, ExecutionKey, BuildIdKey, StatusKey, TaskGroupKey, TaskGroupMaxHostsKey)
+	if err != nil {
+		return nil, errors.Wrap(err, "getting tasks for versions")
+	}
+	dependencyGraph := taskDependencyGraph(allTasks)
+
+	if err := addSingleHostTaskGroupEdges(dependencyGraph, allTasks); err != nil {
+		return nil, errors.Wrap(err, "adding single host task group edges to the dependency graph")
 	}
 
-	tasksToFind := []string{}
-	for _, t := range tasks {
-		for _, dep := range t.DependsOn {
-			if _, ok := depCache[dep.TaskId]; !ok {
-				tasksToFind = append(tasksToFind, dep.TaskId)
-			}
-		}
-		if t.IsPartOfSingleHostTaskGroup() {
-			tasksInGroup, err := FindTaskGroupFromBuild(t.BuildId, t.TaskGroup)
-			if err != nil {
-				return nil, errors.Wrapf(err, "finding task group '%s'", t.TaskGroup)
-			}
-			for _, taskInGroup := range tasksInGroup {
-				if taskInGroup.TaskGroupOrder < t.TaskGroupOrder {
-					if _, ok := depCache[taskInGroup.Id]; !ok {
-						tasksToFind = append(tasksToFind, taskInGroup.Id)
-					}
-				}
-			}
+	var dependencySet map[string]bool
+	for _, task := range tasks {
+		reachableDependencies := dependencyGraph.reachableDependencies(task.ToTaskNode())
+		for _, dep := range reachableDependencies {
+			dependencySet[dep.ID] = true
 		}
 	}
-
-	// leaf node
-	if len(tasksToFind) == 0 {
+	if len(dependencySet) == 0 {
 		return nil, nil
 	}
 
-	deps, err := FindWithFields(ByIds(tasksToFind), IdKey, DependsOnKey, ExecutionKey, BuildIdKey, StatusKey, TaskGroupKey)
-	if err != nil {
-		return nil, errors.Wrap(err, "getting dependencies")
+	var deps []Task
+	for _, t := range allTasks {
+		if dependencySet[t.Id] {
+			deps = append(deps, t)
+		}
 	}
 
-	recursiveDeps, err := GetRecursiveDependenciesUp(deps, depCache)
-	if err != nil {
-		return nil, errors.Wrap(err, "getting recursive dependencies")
+	return deps, nil
+}
+
+func addSingleHostTaskGroupEdges(graph DependencyGraph, tasks []Task) error {
+	type taskGroupBuildPair struct {
+		taskGroup string
+		build     string
+	}
+	taskGroupSet := make(map[taskGroupBuildPair]bool)
+	for _, t := range tasks {
+		if t.IsPartOfSingleHostTaskGroup() {
+			taskGroupSet[taskGroupBuildPair{taskGroup: t.TaskGroup, build: t.BuildId}] = true
+		}
+	}
+	for taskGroup := range taskGroupSet {
+		tasksInGroup, err := FindTaskGroupFromBuild(taskGroup.build, taskGroup.taskGroup)
+		if err != nil {
+			return errors.Wrapf(err, "finding task group '%s' in build '%s'", taskGroup.taskGroup, taskGroup.build)
+		}
+		for i := 0; i < len(tasksInGroup)-1; i++ {
+			graph.AddEdge(tasksInGroup[i+1].ToTaskNode(), tasksInGroup[i].ToTaskNode(), DependencyEdge{})
+		}
 	}
 
-	return append(deps, recursiveDeps...), nil
+	return nil
 }
 
 // getRecursiveDependenciesDown returns a slice containing all tasks recursively depending on tasks.

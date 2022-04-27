@@ -38,14 +38,18 @@ func (t TaskNode) String() string {
 }
 
 func VersionDependencyGraph(versionID string) (DependencyGraph, error) {
-	g := NewDependencyGraph()
 	tasks, err := FindAllTasksFromVersionWithDependencies(versionID)
 	if err != nil {
-		return g, errors.Wrapf(err, "getting tasks for version '%s'", versionID)
+		return DependencyGraph{}, errors.Wrapf(err, "getting tasks for version '%s'", versionID)
 	}
 
+	return taskDependencyGraph(tasks), nil
+}
+
+func taskDependencyGraph(tasks []Task) DependencyGraph {
+	g := NewDependencyGraph()
 	g.buildFromTasks(tasks)
-	return g, nil
+	return g
 }
 
 func NewDependencyGraph() DependencyGraph {
@@ -189,4 +193,19 @@ func (g *DependencyGraph) TopologicalStableSort() ([]TaskNode, error) {
 	}
 
 	return sortedTasks, nil
+}
+
+func (g *DependencyGraph) reachableDependencies(node TaskNode) []TaskNode {
+	traversal := traverse.DepthFirst{}
+	_ = traversal.Walk(g.graph, g.tasksToNodes[node], func(graph.Node) bool { return false })
+
+	var reachable []TaskNode
+	allNodes := g.graph.Nodes()
+	for allNodes.Next() {
+		if traversal.Visited(allNodes.Node()) {
+			reachable = append(reachable, g.nodesToTasks[allNodes.Node()])
+		}
+	}
+
+	return reachable
 }
