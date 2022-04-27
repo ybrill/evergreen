@@ -710,13 +710,13 @@ func (t *Task) RefreshBlockedDependencies(depCache map[string]Task) ([]Task, err
 	return blockedDeps, nil
 }
 
-func (t *Task) BlockedOnDeactivatedDependency(depCache map[string]Task) ([]string, error) {
+func (t *Task) BlockedOnDeactivatedDependency(depCache map[string]Task) ([]Task, error) {
 	_, err := t.populateDependencyTaskCache(depCache)
 	if err != nil {
 		return nil, errors.WithStack(err)
 	}
 
-	blockingDeps := []string{}
+	blockingDeps := []Task{}
 	for _, dep := range t.DependsOn {
 		depTask, exists := depCache[dep.TaskId]
 		if !exists {
@@ -731,7 +731,7 @@ func (t *Task) BlockedOnDeactivatedDependency(depCache map[string]Task) ([]strin
 			depCache[depTask.Id] = depTask
 		}
 		if !depTask.IsFinished() && !depTask.Activated {
-			blockingDeps = append(blockingDeps, depTask.Id)
+			blockingDeps = append(blockingDeps, depTask)
 		}
 	}
 

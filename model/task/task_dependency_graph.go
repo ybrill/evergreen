@@ -80,7 +80,7 @@ func (g *DependencyGraph) buildFromTasks(tasks []Task, reversed bool) error {
 		for _, dep := range task.DependsOn {
 			dependedOnTaskNode := taskIDToNode[dep.TaskId]
 			if reversed {
-				g.AddReverseEdge(dependentTaskNode, dependedOnTaskNode, DependencyEdge{Status: dep.Status})
+				g.AddReversedEdge(dependentTaskNode, dependedOnTaskNode, DependencyEdge{Status: dep.Status})
 			} else {
 				g.AddEdge(dependentTaskNode, dependedOnTaskNode, DependencyEdge{Status: dep.Status})
 			}
@@ -98,26 +98,22 @@ func (g *DependencyGraph) AddTaskNode(tNode TaskNode) {
 }
 
 func (g *DependencyGraph) AddEdge(dependentTask, dependedOnTask TaskNode, dep DependencyEdge) {
-	g.addEdge(dependentTask, dependedOnTask, dep, false)
+	g.addEdgeToGraph(dependentTask, dependedOnTask, dep)
 }
-func (g *DependencyGraph) AddReverseEdge(dependentTask, dependedOnTask TaskNode, dep DependencyEdge) {
-	g.addEdge(dependentTask, dependedOnTask, dep, true)
+func (g *DependencyGraph) AddReversedEdge(dependentTask, dependedOnTask TaskNode, dep DependencyEdge) {
+	g.addEdgeToGraph(dependedOnTask, dependentTask, dep)
 }
 
-func (g *DependencyGraph) addEdge(dependentTask, dependedOnTask TaskNode, dep DependencyEdge, reversed bool) {
-	dependentNode := g.tasksToNodes[dependentTask]
-	dependedOnNode := g.tasksToNodes[dependedOnTask]
-	if dependentNode == nil || dependedOnNode == nil {
+func (g *DependencyGraph) addEdgeToGraph(from, to TaskNode, edge DependencyEdge) {
+	fromNode := g.tasksToNodes[from]
+	toNode := g.tasksToNodes[to]
+	if fromNode == nil || toNode == nil {
 		return
 	}
 
-	line := g.graph.NewLine(dependentNode, dependedOnNode)
-	if reversed {
-		line = g.graph.NewLine(dependedOnNode, dependentNode)
-	}
-
+	line := g.graph.NewLine(fromNode, toNode)
 	g.graph.SetLine(line)
-	g.edgesToDeps[g.graph.Edge(g.tasksToNodes[dependentTask].ID(), g.tasksToNodes[dependedOnTask].ID())] = dep
+	g.edgesToDeps[g.graph.Edge(g.tasksToNodes[from].ID(), g.tasksToNodes[to].ID())] = edge
 }
 
 func (g *DependencyGraph) TasksDependingOnTask(t TaskNode) []TaskNode {
