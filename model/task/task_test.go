@@ -1891,7 +1891,7 @@ func TestGetRecursiveDependenciesUp(t *testing.T) {
 		require.NoError(t, task.Insert())
 	}
 
-	taskDependsOn, err := GetDependenciesUp([]Task{tasks[3], tasks[4]}, nil)
+	taskDependsOn, err := GetRecursiveDependenciesUp([]Task{tasks[3], tasks[4]}, nil)
 	assert.NoError(t, err)
 	assert.Len(t, taskDependsOn, 3)
 	expectedIDs := []string{"t2", "t1", "t0"}
@@ -1913,7 +1913,7 @@ func TestGetRecursiveDependenciesUpWithTaskGroup(t *testing.T) {
 	for _, task := range tasks {
 		require.NoError(t, task.Insert())
 	}
-	taskDependsOn, err := GetDependenciesUp([]Task{tasks[2], tasks[3]}, nil)
+	taskDependsOn, err := GetRecursiveDependenciesUp([]Task{tasks[2], tasks[3]}, nil)
 	assert.NoError(t, err)
 	assert.Len(t, taskDependsOn, 2)
 	expectedIDs := []string{"t0", "t1"}

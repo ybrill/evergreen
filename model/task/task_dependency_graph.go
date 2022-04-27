@@ -48,7 +48,13 @@ func VersionDependencyGraph(versionID string) (DependencyGraph, error) {
 
 func taskDependencyGraph(tasks []Task) DependencyGraph {
 	g := NewDependencyGraph()
-	g.buildFromTasks(tasks)
+	g.buildFromTasks(tasks, false)
+	return g
+}
+
+func reversedTaskDependencyGraph(tasks []Task) DependencyGraph {
+	g := NewDependencyGraph()
+	g.buildFromTasks(tasks, true)
 	return g
 }
 
@@ -61,7 +67,7 @@ func NewDependencyGraph() DependencyGraph {
 	}
 }
 
-func (g *DependencyGraph) buildFromTasks(tasks []Task) error {
+func (g *DependencyGraph) buildFromTasks(tasks []Task, reversed bool) error {
 	taskIDToNode := make(map[string]TaskNode)
 	for _, task := range tasks {
 		tNode := task.ToTaskNode()
@@ -73,7 +79,11 @@ func (g *DependencyGraph) buildFromTasks(tasks []Task) error {
 		dependentTaskNode := task.ToTaskNode()
 		for _, dep := range task.DependsOn {
 			dependedOnTaskNode := taskIDToNode[dep.TaskId]
-			g.AddEdge(dependentTaskNode, dependedOnTaskNode, DependencyEdge{Status: dep.Status})
+			if reversed {
+				g.AddReverseEdge(dependentTaskNode, dependedOnTaskNode, DependencyEdge{Status: dep.Status})
+			} else {
+				g.AddEdge(dependentTaskNode, dependedOnTaskNode, DependencyEdge{Status: dep.Status})
+			}
 		}
 	}
 
@@ -88,6 +98,13 @@ func (g *DependencyGraph) AddTaskNode(tNode TaskNode) {
 }
 
 func (g *DependencyGraph) AddEdge(dependentTask, dependedOnTask TaskNode, dep DependencyEdge) {
+	g.addEdge(dependentTask, dependedOnTask, dep, false)
+}
+func (g *DependencyGraph) AddReverseEdge(dependentTask, dependedOnTask TaskNode, dep DependencyEdge) {
+	g.addEdge(dependentTask, dependedOnTask, dep, true)
+}
+
+func (g *DependencyGraph) addEdge(dependentTask, dependedOnTask TaskNode, dep DependencyEdge, reversed bool) {
 	dependentNode := g.tasksToNodes[dependentTask]
 	dependedOnNode := g.tasksToNodes[dependedOnTask]
 	if dependentNode == nil || dependedOnNode == nil {
@@ -95,6 +112,10 @@ func (g *DependencyGraph) AddEdge(dependentTask, dependedOnTask TaskNode, dep De
 	}
 
 	line := g.graph.NewLine(dependentNode, dependedOnNode)
+	if reversed {
+		line = g.graph.NewLine(dependedOnNode, dependentNode)
+	}
+
 	g.graph.SetLine(line)
 	g.edgesToDeps[g.graph.Edge(g.tasksToNodes[dependentTask].ID(), g.tasksToNodes[dependedOnTask].ID())] = dep
 }
@@ -176,6 +197,7 @@ func (g *DependencyGraph) DepthFirstSearch(start, target TaskNode, traverseEdge 
 }
 
 func (g *DependencyGraph) TopologicalStableSort() ([]TaskNode, error) {
+	// No order function is provided so the secondary sort will be on the order the nodes were added to the graph.
 	sortedNodes, err := topo.SortStabilized(g.graph, nil)
 
 	if err != nil {
@@ -195,17 +217,14 @@ func (g *DependencyGraph) TopologicalStableSort() ([]TaskNode, error) {
 	return sortedTasks, nil
 }
 
-func (g *DependencyGraph) reachableDependencies(node TaskNode) []TaskNode {
-	traversal := traverse.DepthFirst{}
-	_ = traversal.Walk(g.graph, g.tasksToNodes[node], func(graph.Node) bool { return false })
-
+func (g *DependencyGraph) reachableFromNode(start TaskNode) []TaskNode {
 	var reachable []TaskNode
-	allNodes := g.graph.Nodes()
-	for allNodes.Next() {
-		if traversal.Visited(allNodes.Node()) {
-			reachable = append(reachable, g.nodesToTasks[allNodes.Node()])
-		}
+	traversal := traverse.DepthFirst{
+		Visit: func(node graph.Node) {
+			reachable = append(reachable, g.nodesToTasks[node])
+		},
 	}
+	_ = traversal.Walk(g.graph, g.tasksToNodes[start], nil)
 
 	return reachable
 }

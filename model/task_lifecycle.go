@@ -49,7 +49,7 @@ func SetActiveState(caller string, active bool, tasks ...task.Task) error {
 			// if the task is being activated, and it doesn't override its dependencies
 			// activate the task's dependencies as well
 			if !t.OverrideDependencies {
-				deps, err := task.GetDependenciesUp(originalTasks)
+				deps, err := task.GetRecursiveDependenciesUp(originalTasks)
 				if err != nil {
 					catcher.Wrapf(err, "getting dependencies up for task '%s'", t.Id)
 				}

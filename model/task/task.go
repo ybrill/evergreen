@@ -27,9 +27,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"gonum.org/v1/gonum/graph"
-	"gonum.org/v1/gonum/graph/simple"
-	"gonum.org/v1/gonum/graph/topo"
 )
 
 const (
@@ -1387,7 +1384,7 @@ func ActivateTasks(tasks []Task, activationTime time.Time, caller string) error 
 		event.LogTaskActivated(t.Id, t.Execution, caller)
 	}
 
-	return ActivateDeactivatedDependencies(taskIDs, caller)
+	return ActivateDeactivatedDependencies(tasks, caller)
 }
 
 func ActivateTasksByIdsWithDependencies(ids []string, caller string) error {
@@ -1400,7 +1397,7 @@ func ActivateTasksByIdsWithDependencies(ids []string, caller string) error {
 	if err != nil {
 		return errors.Wrap(err, "getting tasks for activation")
 	}
-	dependOn, err := GetDependenciesUp(tasks)
+	dependOn, err := GetRecursiveDependenciesUp(tasks)
 	if err != nil {
 		return errors.Wrap(err, "getting recursive dependencies")
 	}
@@ -1413,13 +1410,13 @@ func ActivateTasksByIdsWithDependencies(ids []string, caller string) error {
 
 // ActivateDeactivatedDependencies activates tasks that depend on these tasks which were deactivated because a task
 // they depended on was deactivated. Only activate when all their dependencies are activated or are being activated
-func ActivateDeactivatedDependencies(tasks []string, caller string) error {
+func ActivateDeactivatedDependencies(tasks []Task, caller string) error {
 	taskMap := make(map[string]bool)
 	for _, t := range tasks {
-		taskMap[t] = true
+		taskMap[t.Id] = true
 	}
 
-	tasksDependingOnTheseTasks, err := getRecursiveDependenciesDown(tasks, nil)
+	tasksDependingOnTheseTasks, err := getRecursiveDependenciesDown(tasks)
 	if err != nil {
 		return errors.Wrap(err, "getting recursive dependencies down")
 	}
@@ -1511,36 +1508,16 @@ func ActivateDeactivatedDependencies(tasks []string, caller string) error {
 }
 
 func topologicalSort(tasks []Task) ([]Task, error) {
-	depGraph := simple.NewDirectedGraph()
-	taskNodeMap := make(map[string]graph.Node)
-	nodeTaskMap := make(map[int64]Task)
-
-	for _, task := range tasks {
-		node := depGraph.NewNode()
-		depGraph.AddNode(node)
-		nodeTaskMap[node.ID()] = task
-		taskNodeMap[task.Id] = node
-	}
-
-	for _, task := range tasks {
-		for _, dep := range task.DependsOn {
-			if toNode, ok := taskNodeMap[dep.TaskId]; ok {
-				edge := simple.Edge{
-					F: simple.Node(toNode.ID()),
-					T: simple.Node(taskNodeMap[task.Id].ID()),
-				}
-				depGraph.SetEdge(edge)
-			}
-		}
-	}
-
-	sorted, err := topo.Sort(depGraph)
+	depGraph := reversedTaskDependencyGraph(tasks)
+	sorted, err := depGraph.TopologicalStableSort()
 	if err != nil {
 		return nil, errors.Wrap(err, "topologically sorting dependency graph")
 	}
-	sortedTasks := make([]Task, 0, len(tasks))
+
+	sortedTasks := make([]Task, 0, len(sorted))
+	taskMap := TaskSliceToMap(tasks)
 	for _, node := range sorted {
-		sortedTasks = append(sortedTasks, nodeTaskMap[node.ID()])
+		sortedTasks = append(sortedTasks, taskMap[node.ID])
 	}
 
 	return sortedTasks, nil
@@ -1582,11 +1559,11 @@ func DeactivateTasks(tasks []Task, caller string) error {
 		event.LogTaskDeactivated(t.Id, t.Execution, caller)
 	}
 
-	return DeactivateDependencies(taskIDs, caller)
+	return DeactivateDependencies(tasks, caller)
 }
 
-func DeactivateDependencies(tasks []string, caller string) error {
-	tasksDependingOnTheseTasks, err := getRecursiveDependenciesDown(tasks, nil)
+func DeactivateDependencies(tasks []Task, caller string) error {
+	tasksDependingOnTheseTasks, err := getRecursiveDependenciesDown(tasks)
 	if err != nil {
 		return errors.Wrap(err, "getting recursive dependencies down")
 	}
@@ -1869,8 +1846,9 @@ func (t *Task) SetDisabledPriority(user string) error {
 	return t.DeactivateTask(user)
 }
 
-// GetDependenciesUp returns all tasks recursively depended upon by any task in tasks.
-func GetDependenciesUp(tasks []Task) ([]Task, error) {
+// GetRecursiveDependenciesUp returns all tasks recursively depended upon by any task in tasks.
+// We assume there are no dependency cycles.
+func GetRecursiveDependenciesUp(tasks []Task) ([]Task, error) {
 	versionSet := make(map[string]bool)
 	for _, task := range tasks {
 		versionSet[task.Version] = true
@@ -1891,7 +1869,7 @@ func GetDependenciesUp(tasks []Task) ([]Task, error) {
 
 	var dependencySet map[string]bool
 	for _, task := range tasks {
-		reachableDependencies := dependencyGraph.reachableDependencies(task.ToTaskNode())
+		reachableDependencies := dependencyGraph.reachableFromNode(task.ToTaskNode())
 		for _, dep := range reachableDependencies {
 			dependencySet[dep.ID] = true
 		}
@@ -1935,48 +1913,41 @@ func addSingleHostTaskGroupEdges(graph DependencyGraph, tasks []Task) error {
 }
 
 // getRecursiveDependenciesDown returns a slice containing all tasks recursively depending on tasks.
-// taskMap should originally be nil.
 // We assume there are no dependency cycles.
-func getRecursiveDependenciesDown(tasks []string, taskMap map[string]bool) ([]Task, error) {
-	if taskMap == nil {
-		taskMap = make(map[string]bool)
+func getRecursiveDependenciesDown(tasks []Task) ([]Task, error) {
+	versionSet := make(map[string]bool)
+	for _, task := range tasks {
+		versionSet[task.Version] = true
 	}
-	for _, t := range tasks {
-		taskMap[t] = true
+	var versions []string
+	for v := range versionSet {
+		versions = append(versions, v)
 	}
-
-	// find the tasks that depend on these tasks
-	query := db.Query(bson.M{
-		bsonutil.GetDottedKeyName(DependsOnKey, DependencyTaskIdKey): bson.M{"$in": tasks},
-	}).WithFields(IdKey, ActivatedKey, DeactivatedForDependencyKey, ExecutionKey, DependsOnKey, BuildIdKey)
-	dependOnUsTasks, err := FindAll(query)
+	allTasks, err := FindWithFields(ByVersions(versions), IdKey, DependsOnKey)
 	if err != nil {
-		return nil, errors.Wrap(err, "can't get dependencies")
+		return nil, errors.Wrap(err, "getting tasks for versions")
 	}
+	dependencyGraph := reversedTaskDependencyGraph(allTasks)
 
-	// if the task hasn't yet been visited we need to recurse on it
-	newDeps := []Task{}
-	for _, t := range dependOnUsTasks {
-		if !taskMap[t.Id] {
-			newDeps = append(newDeps, t)
+	var dependencySet map[string]bool
+	for _, task := range tasks {
+		reachableDependendsOn := dependencyGraph.reachableFromNode(task.ToTaskNode())
+		for _, dep := range reachableDependendsOn {
+			dependencySet[dep.ID] = true
 		}
 	}
-
-	// everything is aleady in the map or nothing depends on tasks
-	if len(newDeps) == 0 {
+	if len(dependencySet) == 0 {
 		return nil, nil
 	}
 
-	newDepIDs := make([]string, 0, len(newDeps))
-	for _, t := range newDeps {
-		newDepIDs = append(newDepIDs, t.Id)
-	}
-	recurseTasks, err := getRecursiveDependenciesDown(newDepIDs, taskMap)
-	if err != nil {
-		return nil, errors.Wrap(err, "getting recursive dependencies")
+	var deps []Task
+	for _, t := range allTasks {
+		if dependencySet[t.Id] {
+			deps = append(deps, t)
+		}
 	}
 
-	return append(newDeps, recurseTasks...), nil
+	return deps, nil
 }
 
 // MarkStart updates the task's start time and sets the status to started

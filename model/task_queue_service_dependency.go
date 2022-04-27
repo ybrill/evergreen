@@ -153,7 +153,7 @@ func (d *basicCachedDAGDispatcherImpl) makeQueue(items []TaskQueueItem) error {
 
 	for _, item := range items {
 		for _, dependency := range item.Dependencies {
-			g.AddEdge(item.ToTaskNode(), IDNodeMap[dependency], task.DependencyEdge{})
+			g.AddReverseEdge(item.ToTaskNode(), IDNodeMap[dependency], task.DependencyEdge{})
 		}
 	}
 
