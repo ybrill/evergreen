@@ -149,3 +149,41 @@ func (g *DependencyGraph) DepthFirstSearch(start, target TaskNode, traverseEdge 
 
 	return traversal.Walk(g.graph, g.tasksToNodes[start], func(n graph.Node) bool { return g.nodesToTasks[n] == target }) == nil
 }
+
+// Unorderable is an error containing sets of unorderable nodes.
+type Unorderable [][]TaskNode
+
+// Error satisfies the error interface.
+func (e Unorderable) Error() string {
+	return fmt.Sprintf("topological ordering is prevented by '%d' cyclic components", len(e))
+}
+
+func (g *DependencyGraph) TopologicalStableSort() ([]TaskNode, error) {
+	sortedNodes, err := topo.SortStabilized(g.graph, nil)
+
+	var cycles Unorderable
+	if err != nil {
+		unorderableNodes, ok := errors.Cause(err).(topo.Unorderable)
+		if !ok {
+			return nil, errors.Wrap(err, "sorting the graph")
+		}
+
+		cycles = make(Unorderable, 0, len(unorderableNodes))
+		for _, cycle := range unorderableNodes {
+			cycleNodes := make([]TaskNode, 0, len(cycle))
+			for _, node := range cycle {
+				cycleNodes = append(cycleNodes, g.nodesToTasks[node])
+			}
+			cycles = append(cycles, cycleNodes)
+		}
+	}
+
+	sortedTasks := make([]TaskNode, 0, len(sortedNodes))
+	for _, node := range sortedNodes {
+		if node != nil {
+			sortedTasks = append(sortedTasks, g.nodesToTasks[node])
+		}
+	}
+
+	return sortedTasks, cycles
+}

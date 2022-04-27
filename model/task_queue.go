@@ -119,6 +119,14 @@ type TaskQueueItem struct {
 	Dependencies        []string      `bson:"dependencies" json:"dependencies"`
 }
 
+func (t *TaskQueueItem) ToTaskNode() task.TaskNode {
+	return task.TaskNode{
+		Name:    t.DisplayName,
+		Variant: t.BuildVariant,
+		Version: t.Version,
+	}
+}
+
 // must not no-lint these values
 var (
 	// bson fields for the task queue struct
