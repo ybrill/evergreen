@@ -407,8 +407,8 @@ func simulateNewDependencyGraph(t *task.Task, newTasksToDependOn task.Tasks) (ta
 func saveDependenciesToTasks(dependedOnTask *task.Task, newTasksToDependOn task.Tasks, dependencyGraph task.DependencyGraph) error {
 	for _, dependent := range dependencyGraph.TasksDependingOnTask(task.TaskNode{Name: dependedOnTask.DisplayName, Variant: dependedOnTask.DisplayName}) {
 		dependedOn := task.TaskNode{Name: dependedOnTask.DisplayName, Variant: dependedOnTask.BuildVariant}
-		dep, err := dependencyGraph.GetDependencyEdge(dependent, dependedOn)
-		if err != nil {
+		dep := dependencyGraph.GetDependencyEdge(dependent, dependedOn)
+		if dep == nil {
 			return errors.Errorf("dependency from '%s' and '%s' not found", dependent, dependedOn)
 		}
 

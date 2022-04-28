@@ -1869,18 +1869,16 @@ func GetRecursiveDependenciesUp(tasks []Task) ([]Task, error) {
 
 	var dependencySet map[string]bool
 	for _, task := range tasks {
-		reachableDependencies := dependencyGraph.reachableFromNode(task.ToTaskNode())
-		for _, dep := range reachableDependencies {
-			dependencySet[dep.ID] = true
+		reachable := dependencyGraph.reachableFromNode(task.ToTaskNode())
+		for _, node := range reachable {
+			dependencySet[node.ID] = true
 		}
 	}
-	if len(dependencySet) == 0 {
-		return nil, nil
-	}
 
+	originalTaskMap := TaskSliceToMap(tasks)
 	var deps []Task
 	for _, t := range allTasks {
-		if dependencySet[t.Id] {
+		if _, inOriginalTasks := originalTaskMap[t.Id]; !inOriginalTasks && dependencySet[t.Id] {
 			deps = append(deps, t)
 		}
 	}
