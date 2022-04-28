@@ -949,7 +949,7 @@ func TestAddDependencies(t *testing.T) {
 		assert.NoError(t, task.Insert())
 	}
 
-	assert.NoError(t, addDependencies(&task.Task{Id: "generator"}, []string{"t3"}))
+	assert.NoError(t, addDependencies(&task.Task{Id: "generator"}, task.Tasks{{Id: "t3"}}))
 
 	t1, err := task.FindOneId("t1")
 	assert.NoError(t, err)

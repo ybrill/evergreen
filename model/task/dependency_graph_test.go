@@ -228,8 +228,8 @@ func TestTasksDependingOnTask(t *testing.T) {
 	g := NewDependencyGraph()
 	g.buildFromTasks(tasks, false)
 
-	assert.Empty(t, g.TasksDependingOnTask(tasks[0].ToTaskNode()))
-	deps := g.TasksDependingOnTask(tasks[1].ToTaskNode())
+	assert.Empty(t, g.TasksPointingToTask(tasks[0].ToTaskNode()))
+	deps := g.TasksPointingToTask(tasks[1].ToTaskNode())
 	require.Len(t, deps, 1)
 	assert.Equal(t, tasks[0].Id, deps[0].ID)
 }

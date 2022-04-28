@@ -1139,35 +1139,6 @@ func TestBlocked(t *testing.T) {
 	}
 }
 
-func TestCircularDependency(t *testing.T) {
-	assert := assert.New(t)
-	require.NoError(t, db.ClearCollections(Collection))
-	t1 := Task{
-		Id:          "t1",
-		DisplayName: "t1",
-		Activated:   true,
-		Status:      evergreen.TaskSucceeded,
-		DependsOn: []Dependency{
-			{TaskId: "t2", Status: evergreen.TaskSucceeded},
-		},
-	}
-	assert.NoError(t1.Insert())
-	t2 := Task{
-		Id:          "t2",
-		DisplayName: "t2",
-		Activated:   true,
-		Status:      evergreen.TaskSucceeded,
-		DependsOn: []Dependency{
-			{TaskId: "t1", Status: evergreen.TaskSucceeded},
-		},
-	}
-	assert.NoError(t2.Insert())
-	assert.NotPanics(func() {
-		err := t1.CircularDependencies()
-		assert.Contains(err.Error(), "dependency cycle detected")
-	})
-}
-
 func TestSiblingDependency(t *testing.T) {
 	assert := assert.New(t)
 	require.NoError(t, db.ClearCollections(Collection))
@@ -1891,7 +1862,7 @@ func TestGetRecursiveDependenciesUp(t *testing.T) {
 		require.NoError(t, task.Insert())
 	}
 
-	taskDependsOn, err := GetRecursiveDependenciesUp([]Task{tasks[3], tasks[4]}, nil)
+	taskDependsOn, err := GetRecursiveDependenciesUp([]Task{tasks[3], tasks[4]})
 	assert.NoError(t, err)
 	assert.Len(t, taskDependsOn, 3)
 	expectedIDs := []string{"t2", "t1", "t0"}
@@ -1913,7 +1884,7 @@ func TestGetRecursiveDependenciesUpWithTaskGroup(t *testing.T) {
 	for _, task := range tasks {
 		require.NoError(t, task.Insert())
 	}
-	taskDependsOn, err := GetRecursiveDependenciesUp([]Task{tasks[2], tasks[3]}, nil)
+	taskDependsOn, err := GetRecursiveDependenciesUp([]Task{tasks[2], tasks[3]})
 	assert.NoError(t, err)
 	assert.Len(t, taskDependsOn, 2)
 	expectedIDs := []string{"t0", "t1"}
@@ -1936,7 +1907,7 @@ func TestGetRecursiveDependenciesDown(t *testing.T) {
 		require.NoError(t, task.Insert())
 	}
 
-	dependingOnMe, err := getRecursiveDependenciesDown([]string{"t0"}, nil)
+	dependingOnMe, err := getRecursiveDependenciesDown([]Task{tasks[0]})
 	assert.NoError(t, err)
 	assert.Len(t, dependingOnMe, 3)
 	expectedIDs := []string{"t2", "t4", "t5"}
@@ -1961,7 +1932,7 @@ func TestDeactivateDependencies(t *testing.T) {
 	}
 
 	updatedIDs := []string{"t4", "t5"}
-	err := DeactivateDependencies([]string{"t0"}, "")
+	err := DeactivateDependencies([]Task{tasks[0]}, "")
 	assert.NoError(t, err)
 
 	dbTasks, err := FindAll(All)
@@ -1997,7 +1968,7 @@ func TestActivateDeactivatedDependencies(t *testing.T) {
 	}
 
 	updatedIDs := []string{"t3", "t4"}
-	err := ActivateDeactivatedDependencies([]string{"t0"}, "")
+	err := ActivateDeactivatedDependencies([]Task{tasks[0]}, "")
 	assert.NoError(t, err)
 
 	dbTasks, err := FindAll(All)
