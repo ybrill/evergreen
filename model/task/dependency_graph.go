@@ -11,24 +11,42 @@ import (
 	"gonum.org/v1/gonum/graph/traverse"
 )
 
+// DependencyGraph models task dependency relationships as a directed graph.
+// Use NewDependencyGraph() to initialize a new DependencyGraph.
 type DependencyGraph struct {
-	graph        *multi.DirectedGraph
-	tasksToNodes map[TaskNode]graph.Node
-	nodesToTasks map[graph.Node]TaskNode
-	edgesToDeps  map[graph.Edge]DependencyEdge
+	graph               *multi.DirectedGraph
+	tasksToNodes        map[TaskNode]graph.Node
+	nodesToTasks        map[graph.Node]TaskNode
+	edgesToDependencies map[graph.Edge]DependencyEdge
 }
 
+// NewDependencyGraph returns an initialized DependencyGraph.
+func NewDependencyGraph() DependencyGraph {
+	return DependencyGraph{
+		graph:               multi.NewDirectedGraph(),
+		tasksToNodes:        make(map[TaskNode]graph.Node),
+		nodesToTasks:        make(map[graph.Node]TaskNode),
+		edgesToDependencies: make(map[graph.Edge]DependencyEdge),
+	}
+}
+
+// DependencyEdge is a representation of a dependency in the graph.
 type DependencyEdge struct {
+	// Status is the status specified by the dependency, if any.
 	Status string
 }
 
+// TaskNode is the representation of a task in the graph.
 type TaskNode struct {
-	Name    string
+	// Name is the display name of the task.
+	Name string
+	// Variant is the build variant of the task.
 	Variant string
-
+	// ID is the task's ID.
 	ID string
 }
 
+// String represents TaskNode as a string.
 func (t TaskNode) String() string {
 	if t.ID != "" {
 		return t.ID
@@ -37,6 +55,7 @@ func (t TaskNode) String() string {
 	return fmt.Sprintf("%s/%s", t.Variant, t.Name)
 }
 
+// VersionDependencyGraph finds all the tasks from the version given by versionID and constructs a DependencyGraph from them.
 func VersionDependencyGraph(versionID string) (DependencyGraph, error) {
 	tasks, err := FindAllTasksFromVersionWithDependencies(versionID)
 	if err != nil {
@@ -52,19 +71,12 @@ func taskDependencyGraph(tasks []Task) DependencyGraph {
 	return g
 }
 
+// reversedTaskDependencyGraph constructs a DependencyGraph from tasks.
+// Edges in the graph are reversed so they point from depended on tasks to dependent tasks.
 func reversedTaskDependencyGraph(tasks []Task) DependencyGraph {
 	g := NewDependencyGraph()
 	g.buildFromTasks(tasks, true)
 	return g
-}
-
-func NewDependencyGraph() DependencyGraph {
-	return DependencyGraph{
-		graph:        multi.NewDirectedGraph(),
-		tasksToNodes: make(map[TaskNode]graph.Node),
-		nodesToTasks: make(map[graph.Node]TaskNode),
-		edgesToDeps:  make(map[graph.Edge]DependencyEdge),
-	}
 }
 
 func (g *DependencyGraph) buildFromTasks(tasks []Task, reversed bool) {
@@ -88,6 +100,7 @@ func (g *DependencyGraph) buildFromTasks(tasks []Task, reversed bool) {
 	}
 }
 
+// AddTaskNode adds a node to the graph.
 func (g *DependencyGraph) AddTaskNode(tNode TaskNode) {
 	node := g.graph.NewNode()
 	g.graph.AddNode(node)
@@ -95,9 +108,14 @@ func (g *DependencyGraph) AddTaskNode(tNode TaskNode) {
 	g.nodesToTasks[node] = tNode
 }
 
+// AddEdge adds an edge from the dependent task to the depended on task.
+// Noop if one of the nodes doesn't exist in the graph.
 func (g *DependencyGraph) AddEdge(dependentTask, dependedOnTask TaskNode, dep DependencyEdge) {
 	g.addEdgeToGraph(dependentTask, dependedOnTask, dep)
 }
+
+// AddReversedEdge adds an edge from the depended on task to the dependent task.
+// Noops if one of the nodes doesn't exist in the graph.
 func (g *DependencyGraph) AddReversedEdge(dependentTask, dependedOnTask TaskNode, dep DependencyEdge) {
 	g.addEdgeToGraph(dependedOnTask, dependentTask, dep)
 }
@@ -111,10 +129,12 @@ func (g *DependencyGraph) addEdgeToGraph(from, to TaskNode, edge DependencyEdge)
 
 	line := g.graph.NewLine(fromNode, toNode)
 	g.graph.SetLine(line)
-	g.edgesToDeps[g.graph.Edge(g.tasksToNodes[from].ID(), g.tasksToNodes[to].ID())] = edge
+	g.edgesToDependencies[g.graph.Edge(g.tasksToNodes[from].ID(), g.tasksToNodes[to].ID())] = edge
 }
 
-func (g *DependencyGraph) TasksDependingOnTask(t TaskNode) []TaskNode {
+// TasksPointingToTask returns all the nodes in the graph that depend directly on t.
+// If the graph is reversed it returns all the nodes t directly depends on.
+func (g *DependencyGraph) TasksPointingToTask(t TaskNode) []TaskNode {
 	dependedOnNode := g.tasksToNodes[t]
 	if dependedOnNode == nil {
 		return nil
@@ -129,18 +149,22 @@ func (g *DependencyGraph) TasksDependingOnTask(t TaskNode) []TaskNode {
 	return dependentTasks
 }
 
+// GetDependencyEdge returns a pointer to the edge from fromNode to toNode.
+// If the edge doesn't exist it returns nil.
 func (g *DependencyGraph) GetDependencyEdge(fromNode, toNode TaskNode) *DependencyEdge {
 	edge := g.graph.Edge(g.tasksToNodes[fromNode].ID(), g.tasksToNodes[toNode].ID())
 	if edge == nil {
 		return nil
 	}
-	depEdge := g.edgesToDeps[edge]
+	depEdge := g.edgesToDependencies[edge]
 
 	return &depEdge
 }
 
+// DependencyCycles is a jagged array of node cycles.
 type DependencyCycles [][]TaskNode
 
+// String represents DependencyCycles as a string.
 func (dc DependencyCycles) String() string {
 	cycles := make([]string, 0, len(dc))
 	for _, cycle := range dc {
@@ -154,6 +178,8 @@ func (dc DependencyCycles) String() string {
 	return strings.Join(cycles, ", ")
 }
 
+// Cycles returns cycles in the graph, if any.
+// Self-loops are not included as cycles.
 func (g *DependencyGraph) Cycles() DependencyCycles {
 	var cycles DependencyCycles
 	stronglyConnectedComponenets := topo.TarjanSCC(g.graph)
@@ -173,6 +199,8 @@ func (g *DependencyGraph) Cycles() DependencyCycles {
 	return cycles
 }
 
+// DepthFirstSearch begins a DFS from start and returns whether target is reachable.
+// If traverseEdge is not nil an edge is only traversed if traverseEdge returns true on that edge.
 func (g *DependencyGraph) DepthFirstSearch(start, target TaskNode, traverseEdge func(currentNode, nextNode TaskNode, edge DependencyEdge) bool) bool {
 	_, startExists := g.tasksToNodes[start]
 	_, targetExists := g.tasksToNodes[target]
@@ -188,7 +216,7 @@ func (g *DependencyGraph) DepthFirstSearch(start, target TaskNode, traverseEdge 
 
 			dependedOn := g.nodesToTasks[e.From()]
 			dependent := g.nodesToTasks[e.To()]
-			edge := g.edgesToDeps[e]
+			edge := g.edgesToDependencies[e]
 
 			return traverseEdge(dependent, dependedOn, edge)
 		},
@@ -197,9 +225,11 @@ func (g *DependencyGraph) DepthFirstSearch(start, target TaskNode, traverseEdge 
 	return traversal.Walk(g.graph, g.tasksToNodes[start], func(n graph.Node) bool { return g.nodesToTasks[n] == target }) == nil
 }
 
+// TopologicalStableSort sorts the nodes in the graph topologically. It is stable in the sense that when a topological ordering
+// is ambiguous the order the tasks were added to the graph prevails.
+// To sort with all dependent tasks before the tasks they depend on use the default graph.
+// To sort with all depended on tasks before the tasks that depend on them use a reversed graph.
 func (g *DependencyGraph) TopologicalStableSort() ([]TaskNode, error) {
-	// No order function is provided so the sort is stable in the sense that topological ambiguities
-	// are resolved by the order the nodes were added to the graph.
 	sortedNodes, err := topo.SortStabilized(g.graph, nil)
 
 	if err != nil {
@@ -219,6 +249,8 @@ func (g *DependencyGraph) TopologicalStableSort() ([]TaskNode, error) {
 	return sortedTasks, nil
 }
 
+// reachableFromNode returns all the dependencies recursively depended on by start.
+// In the case of a reversed graph it returns all the dependencies recursively depending on start.
 func (g *DependencyGraph) reachableFromNode(start TaskNode) []TaskNode {
 	var reachable []TaskNode
 	traversal := traverse.DepthFirst{

@@ -390,7 +390,7 @@ func simulateNewDependencyGraph(t *task.Task, newTasksToDependOn task.Tasks) (ta
 		return dependencyGraph, errors.Wrapf(err, "creating dependency graph for version '%s'", t.Version)
 	}
 
-	dependents := dependencyGraph.TasksDependingOnTask(t.ToTaskNode())
+	dependents := dependencyGraph.TasksPointingToTask(t.ToTaskNode())
 	for _, newTask := range newTasksToDependOn {
 		for _, dependent := range dependents {
 			dependencyGraph.AddEdge(
@@ -405,7 +405,7 @@ func simulateNewDependencyGraph(t *task.Task, newTasksToDependOn task.Tasks) (ta
 }
 
 func saveDependenciesToTasks(dependedOnTask *task.Task, newTasksToDependOn task.Tasks, dependencyGraph task.DependencyGraph) error {
-	for _, dependent := range dependencyGraph.TasksDependingOnTask(task.TaskNode{Name: dependedOnTask.DisplayName, Variant: dependedOnTask.DisplayName}) {
+	for _, dependent := range dependencyGraph.TasksPointingToTask(task.TaskNode{Name: dependedOnTask.DisplayName, Variant: dependedOnTask.DisplayName}) {
 		dependedOn := task.TaskNode{Name: dependedOnTask.DisplayName, Variant: dependedOnTask.BuildVariant}
 		dep := dependencyGraph.GetDependencyEdge(dependent, dependedOn)
 		if dep == nil {
