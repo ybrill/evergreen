@@ -495,9 +495,6 @@ func getTaskDependencies(t *task.Task) ([]uiDep, string, error) {
 		})
 	}
 
-	if err = t.CircularDependencies(); err != nil {
-		return nil, "", err
-	}
 	state, err := t.BlockedState(taskMap)
 	if err != nil {
 		return nil, "", errors.Wrap(err, "can't get blocked state")
