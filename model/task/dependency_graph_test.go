@@ -57,17 +57,25 @@ func TestBuildFromTasks(t *testing.T) {
 		assert.Equal(t, 1, g.graph.To(g.tasksToNodes[tasks[3].ToTaskNode()].ID()).Len())
 		assert.Equal(t, 0, g.graph.From(g.tasksToNodes[tasks[3].ToTaskNode()].ID()).Len())
 
-		t0_t1Edge := g.graph.Edge(g.tasksToNodes[tasks[0].ToTaskNode()].ID(), g.tasksToNodes[tasks[1].ToTaskNode()].ID())
-		require.NotNil(t, t0_t1Edge)
-		assert.Equal(t, DependencyEdge{Status: evergreen.TaskSucceeded}, g.edgesToDependencies[t0_t1Edge])
+		assert.Len(t, g.edgesToDependencies, 3)
 
-		t1_t2Edge := g.graph.Edge(g.tasksToNodes[tasks[1].ToTaskNode()].ID(), g.tasksToNodes[tasks[2].ToTaskNode()].ID())
-		require.NotNil(t, t1_t2Edge)
-		assert.Equal(t, DependencyEdge{}, g.edgesToDependencies[t1_t2Edge])
+		assert.True(t, g.graph.HasEdgeFromTo(g.tasksToNodes[tasks[0].ToTaskNode()].ID(), g.tasksToNodes[tasks[1].ToTaskNode()].ID()))
+		assert.Equal(t,
+			DependencyEdge{From: tasks[0].ToTaskNode(), To: tasks[1].ToTaskNode(), Status: evergreen.TaskSucceeded},
+			g.edgesToDependencies[edgeKey{from: tasks[0].ToTaskNode(), to: tasks[1].ToTaskNode()}],
+		)
 
-		t1_t3Edge := g.graph.Edge(g.tasksToNodes[tasks[1].ToTaskNode()].ID(), g.tasksToNodes[tasks[3].ToTaskNode()].ID())
-		require.NotNil(t, t1_t3Edge)
-		assert.Equal(t, DependencyEdge{}, g.edgesToDependencies[t1_t3Edge])
+		assert.True(t, g.graph.HasEdgeFromTo(g.tasksToNodes[tasks[1].ToTaskNode()].ID(), g.tasksToNodes[tasks[2].ToTaskNode()].ID()))
+		assert.Equal(t,
+			DependencyEdge{From: tasks[1].ToTaskNode(), To: tasks[2].ToTaskNode()},
+			g.edgesToDependencies[edgeKey{from: tasks[1].ToTaskNode(), to: tasks[2].ToTaskNode()}],
+		)
+
+		assert.True(t, g.graph.HasEdgeFromTo(g.tasksToNodes[tasks[1].ToTaskNode()].ID(), g.tasksToNodes[tasks[3].ToTaskNode()].ID()))
+		assert.Equal(t,
+			DependencyEdge{From: tasks[1].ToTaskNode(), To: tasks[3].ToTaskNode()},
+			g.edgesToDependencies[edgeKey{from: tasks[1].ToTaskNode(), to: tasks[3].ToTaskNode()}],
+		)
 	})
 
 	t.Run("ReversedEdges", func(t *testing.T) {
@@ -91,17 +99,25 @@ func TestBuildFromTasks(t *testing.T) {
 		assert.Equal(t, 0, g.graph.To(g.tasksToNodes[tasks[3].ToTaskNode()].ID()).Len())
 		assert.Equal(t, 1, g.graph.From(g.tasksToNodes[tasks[3].ToTaskNode()].ID()).Len())
 
-		t1_t0Edge := g.graph.Edge(g.tasksToNodes[tasks[1].ToTaskNode()].ID(), g.tasksToNodes[tasks[0].ToTaskNode()].ID())
-		require.NotNil(t, t1_t0Edge)
-		assert.Equal(t, DependencyEdge{Status: "success"}, g.edgesToDependencies[t1_t0Edge])
+		assert.Len(t, g.edgesToDependencies, 3)
 
-		t2_t1Edge := g.graph.Edge(g.tasksToNodes[tasks[2].ToTaskNode()].ID(), g.tasksToNodes[tasks[1].ToTaskNode()].ID())
-		require.NotNil(t, t2_t1Edge)
-		assert.Equal(t, DependencyEdge{}, g.edgesToDependencies[t2_t1Edge])
+		assert.True(t, g.graph.HasEdgeFromTo(g.tasksToNodes[tasks[1].ToTaskNode()].ID(), g.tasksToNodes[tasks[0].ToTaskNode()].ID()))
+		assert.Equal(t,
+			DependencyEdge{From: tasks[1].ToTaskNode(), To: tasks[0].ToTaskNode(), Status: evergreen.TaskSucceeded},
+			g.edgesToDependencies[edgeKey{from: tasks[1].ToTaskNode(), to: tasks[0].ToTaskNode()}],
+		)
 
-		t3_t1Edge := g.graph.Edge(g.tasksToNodes[tasks[3].ToTaskNode()].ID(), g.tasksToNodes[tasks[1].ToTaskNode()].ID())
-		require.NotNil(t, t3_t1Edge)
-		assert.Equal(t, DependencyEdge{}, g.edgesToDependencies[t3_t1Edge])
+		assert.True(t, g.graph.HasEdgeFromTo(g.tasksToNodes[tasks[2].ToTaskNode()].ID(), g.tasksToNodes[tasks[1].ToTaskNode()].ID()))
+		assert.Equal(t,
+			DependencyEdge{From: tasks[2].ToTaskNode(), To: tasks[1].ToTaskNode()},
+			g.edgesToDependencies[edgeKey{from: tasks[2].ToTaskNode(), to: tasks[1].ToTaskNode()}],
+		)
+
+		assert.True(t, g.graph.HasEdgeFromTo(g.tasksToNodes[tasks[3].ToTaskNode()].ID(), g.tasksToNodes[tasks[1].ToTaskNode()].ID()))
+		assert.Equal(t,
+			DependencyEdge{From: tasks[3].ToTaskNode(), To: tasks[1].ToTaskNode()},
+			g.edgesToDependencies[edgeKey{from: tasks[3].ToTaskNode(), to: tasks[1].ToTaskNode()}],
+		)
 	})
 }
 
@@ -150,7 +166,7 @@ func TestAddEdgeToGraph(t *testing.T) {
 		assert.Equal(t, 1, g.graph.Edges().Len())
 		assert.Len(t, g.edgesToDependencies, 1)
 
-		g.addEdgeToGraph(tasks[0].ToTaskNode(), tasks[1].ToTaskNode(), DependencyEdge{})
+		g.addEdgeToGraph(DependencyEdge{From: tasks[0].ToTaskNode(), To: tasks[1].ToTaskNode()})
 		assert.Equal(t, 2, g.graph.Edges().Len())
 		assert.True(t, g.graph.HasEdgeFromTo(g.tasksToNodes[tasks[0].ToTaskNode()].ID(), g.tasksToNodes[tasks[1].ToTaskNode()].ID()))
 		assert.Len(t, g.edgesToDependencies, 2)
@@ -162,7 +178,7 @@ func TestAddEdgeToGraph(t *testing.T) {
 		assert.Equal(t, 1, g.graph.Edges().Len())
 		assert.Len(t, g.edgesToDependencies, 1)
 
-		g.addEdgeToGraph(tasks[1].ToTaskNode(), tasks[2].ToTaskNode(), DependencyEdge{})
+		g.addEdgeToGraph(DependencyEdge{From: tasks[1].ToTaskNode(), To: tasks[2].ToTaskNode()})
 		assert.Equal(t, 1, g.graph.Edges().Len())
 		assert.Len(t, g.edgesToDependencies, 1)
 	})
@@ -173,7 +189,7 @@ func TestAddEdgeToGraph(t *testing.T) {
 		assert.Equal(t, 1, g.graph.Edges().Len())
 		assert.Len(t, g.edgesToDependencies, 1)
 
-		g.addEdgeToGraph(tasks[0].ToTaskNode(), TaskNode{ID: "t3"}, DependencyEdge{})
+		g.addEdgeToGraph(DependencyEdge{From: tasks[0].ToTaskNode(), To: TaskNode{ID: "t3"}})
 		assert.Equal(t, 1, g.graph.Edges().Len())
 		assert.Len(t, g.edgesToDependencies, 1)
 	})
@@ -184,8 +200,8 @@ func TestAddEdgeToGraph(t *testing.T) {
 		assert.Equal(t, 1, g.graph.Edges().Len())
 		assert.Len(t, g.edgesToDependencies, 1)
 
-		g.addEdgeToGraph(tasks[0].ToTaskNode(), tasks[1].ToTaskNode(), DependencyEdge{})
-		g.addEdgeToGraph(tasks[1].ToTaskNode(), tasks[0].ToTaskNode(), DependencyEdge{})
+		g.addEdgeToGraph(DependencyEdge{From: tasks[0].ToTaskNode(), To: tasks[1].ToTaskNode()})
+		g.addEdgeToGraph(DependencyEdge{From: tasks[1].ToTaskNode(), To: tasks[0].ToTaskNode()})
 		assert.Equal(t, 3, g.graph.Edges().Len())
 		assert.True(t, g.graph.HasEdgeFromTo(g.tasksToNodes[tasks[0].ToTaskNode()].ID(), g.tasksToNodes[tasks[1].ToTaskNode()].ID()))
 		assert.True(t, g.graph.HasEdgeFromTo(g.tasksToNodes[tasks[1].ToTaskNode()].ID(), g.tasksToNodes[tasks[0].ToTaskNode()].ID()))
@@ -247,14 +263,13 @@ func TestReachableFromNode(t *testing.T) {
 
 	reachable := g.reachableFromNode(tasks[0].ToTaskNode())
 	assert.Len(t, reachable, 4)
-	assert.Contains(t, reachable, tasks[0].ToTaskNode())
 	assert.Contains(t, reachable, tasks[1].ToTaskNode())
 	assert.Contains(t, reachable, tasks[2].ToTaskNode())
 	assert.Contains(t, reachable, tasks[3].ToTaskNode())
+	assert.Contains(t, reachable, tasks[4].ToTaskNode())
 
 	reachable = g.reachableFromNode(tasks[1].ToTaskNode())
-	assert.Len(t, reachable, 2)
-	assert.Contains(t, reachable, tasks[1].ToTaskNode())
+	assert.Len(t, reachable, 1)
 	assert.Contains(t, reachable, tasks[3].ToTaskNode())
 
 	reachable = g.reachableFromNode(tasks[3].ToTaskNode())
@@ -332,12 +347,12 @@ func TestDependencyCyclesString(t *testing.T) {
 	})
 
 	t.Run("TwoCycles", func(t *testing.T) {
-		ids := []string{"t0", "t1", "t3", "t4"}
+		ids := []string{"t0", "t1", "t2", "t3"}
 		dc := DependencyCycles{
 			{{ID: ids[0]}, {ID: ids[1]}},
-			{{ID: ids[3]}, {ID: ids[4]}},
+			{{ID: ids[2]}, {ID: ids[3]}},
 		}
-		assert.Equal(t, fmt.Sprintf("[%s, %s], [%s, %s]", ids[0], ids[1], ids[3], ids[4]), dc.String())
+		assert.Equal(t, fmt.Sprintf("[%s, %s], [%s, %s]", ids[0], ids[1], ids[2], ids[3]), dc.String())
 	})
 }
 
@@ -358,8 +373,8 @@ func TestDepthFirstSearch(t *testing.T) {
 	})
 
 	t.Run("TraversalBlockedAtNode", func(t *testing.T) {
-		assert.False(t, g.DepthFirstSearch(tasks[0].ToTaskNode(), tasks[2].ToTaskNode(), func(currentNode, nextNode TaskNode, edge DependencyEdge) bool {
-			if nextNode == tasks[1].ToTaskNode() {
+		assert.False(t, g.DepthFirstSearch(tasks[0].ToTaskNode(), tasks[2].ToTaskNode(), func(edge DependencyEdge) bool {
+			if edge.To == tasks[1].ToTaskNode() {
 				return false
 			}
 			return true
@@ -367,7 +382,7 @@ func TestDepthFirstSearch(t *testing.T) {
 	})
 
 	t.Run("TraversalBlockedAtEdge", func(t *testing.T) {
-		assert.False(t, g.DepthFirstSearch(tasks[0].ToTaskNode(), tasks[2].ToTaskNode(), func(currentNode, nextNode TaskNode, edge DependencyEdge) bool {
+		assert.False(t, g.DepthFirstSearch(tasks[0].ToTaskNode(), tasks[2].ToTaskNode(), func(edge DependencyEdge) bool {
 			if edge.Status == evergreen.TaskSucceeded {
 				return true
 			}
@@ -404,8 +419,8 @@ func TestTopologicalStableSort(t *testing.T) {
 
 	t.Run("StableSortWithDependencies", func(t *testing.T) {
 		tasks := []Task{
-			{Id: "t0"},
-			{Id: "t1", DependsOn: []Dependency{{TaskId: "t0"}}},
+			{Id: "t0", DependsOn: []Dependency{{TaskId: "t1"}}},
+			{Id: "t1"},
 			{Id: "t2"},
 		}
 		g := NewDependencyGraph()

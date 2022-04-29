@@ -393,11 +393,7 @@ func simulateNewDependencyGraph(t *task.Task, newTasksToDependOn task.Tasks) (ta
 	dependents := dependencyGraph.TasksPointingToTask(t.ToTaskNode())
 	for _, newTask := range newTasksToDependOn {
 		for _, dependent := range dependents {
-			dependencyGraph.AddEdge(
-				dependent,
-				newTask.ToTaskNode(),
-				task.DependencyEdge{},
-			)
+			dependencyGraph.AddEdge(dependent, newTask.ToTaskNode(), "")
 		}
 	}
 

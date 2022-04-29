@@ -1810,9 +1810,9 @@ func (p *Project) DependencyGraph() task.DependencyGraph {
 
 }
 
-// dependenciesForTaskUnit returns a map of edges to the task nodes that dependentTaskUnit depends on.
-func dependenciesForTaskUnit(dependentTaskUnit BuildVariantTaskUnit, allNodes []task.TaskNode) map[task.DependencyEdge][]task.TaskNode {
-	dependencies := make(map[task.DependencyEdge][]task.TaskNode)
+// dependenciesForTaskUnit returns a map of status to the task nodes that dependentTaskUnit depends on.
+func dependenciesForTaskUnit(dependentTaskUnit BuildVariantTaskUnit, allNodes []task.TaskNode) map[string][]task.TaskNode {
+	dependencies := make(map[string][]task.TaskNode)
 	for _, dep := range dependentTaskUnit.DependsOn {
 		// Use the current variant if none is specified.
 		if dep.Variant == "" {
@@ -1823,7 +1823,7 @@ func dependenciesForTaskUnit(dependentTaskUnit BuildVariantTaskUnit, allNodes []
 			if node != dependentTaskUnit.ToTaskNode() &&
 				(dep.Variant == AllVariants || node.Variant == dep.Variant) &&
 				(dep.Name == AllDependencies || node.Name == dep.Name) {
-				dependencies[task.DependencyEdge{Status: dep.Status}] = append(dependencies[task.DependencyEdge{Status: dep.Status}], node)
+				dependencies[dep.Status] = append(dependencies[dep.Status], node)
 			}
 		}
 	}

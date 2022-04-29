@@ -1691,7 +1691,10 @@ func validateTVDependsOnTV(dependentTask, dependedOnTask model.TVPair, statuses 
 
 	dependentNode := task.TaskNode{Name: dependentTask.TaskName, Variant: dependentTask.Variant}
 	dependedOnNode := task.TaskNode{Name: dependedOnTask.TaskName, Variant: dependedOnTask.Variant}
-	traversal := func(dependent, dependedOn task.TaskNode, _ task.DependencyEdge) bool {
+	traversal := func(edge task.DependencyEdge) bool {
+		dependent := edge.From
+		dependedOn := edge.To
+
 		dependedOnTaskUnit := tvTaskUnitMap[model.TVPair{TaskName: dependedOn.Name, Variant: dependedOn.Variant}]
 		dependentTaskUnit := tvTaskUnitMap[model.TVPair{TaskName: dependent.Name, Variant: dependent.Variant}]
 

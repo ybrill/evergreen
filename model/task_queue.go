@@ -223,11 +223,7 @@ func validateNewGraph(t *task.Task, tasksToBlock []task.Task) error {
 	}
 
 	for _, taskToBlock := range tasksToBlock {
-		dependencyGraph.AddEdge(
-			taskToBlock.ToTaskNode(),
-			t.ToTaskNode(),
-			task.DependencyEdge{},
-		)
+		dependencyGraph.AddEdge(taskToBlock.ToTaskNode(), t.ToTaskNode(), "")
 	}
 
 	if cycles := dependencyGraph.Cycles(); len(cycles) > 0 {

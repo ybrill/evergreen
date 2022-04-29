@@ -1903,7 +1903,7 @@ func addSingleHostTaskGroupEdges(graph DependencyGraph, tasks []Task) error {
 			return errors.Wrapf(err, "finding task group '%s' in build '%s'", taskGroup.taskGroup, taskGroup.build)
 		}
 		for i := 0; i < len(tasksInGroup)-1; i++ {
-			graph.AddEdge(tasksInGroup[i+1].ToTaskNode(), tasksInGroup[i].ToTaskNode(), DependencyEdge{})
+			graph.AddEdge(tasksInGroup[i+1].ToTaskNode(), tasksInGroup[i].ToTaskNode(), "")
 		}
 	}
 
@@ -1929,8 +1929,8 @@ func getRecursiveDependenciesDown(tasks []Task) ([]Task, error) {
 
 	var dependencySet map[string]bool
 	for _, task := range tasks {
-		reachableDependendsOn := dependencyGraph.reachableFromNode(task.ToTaskNode())
-		for _, dep := range reachableDependendsOn {
+		reachable := dependencyGraph.reachableFromNode(task.ToTaskNode())
+		for _, dep := range reachable {
 			dependencySet[dep.ID] = true
 		}
 	}
