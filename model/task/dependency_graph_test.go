@@ -244,10 +244,10 @@ func TestTasksDependingOnTask(t *testing.T) {
 	g := NewDependencyGraph()
 	g.buildFromTasks(tasks, false)
 
-	assert.Empty(t, g.TasksPointingToTask(tasks[0].ToTaskNode()))
-	deps := g.TasksPointingToTask(tasks[1].ToTaskNode())
-	require.Len(t, deps, 1)
-	assert.Equal(t, tasks[0].Id, deps[0].ID)
+	assert.Empty(t, g.EdgesIntoTask(tasks[0].ToTaskNode()))
+	edges := g.EdgesIntoTask(tasks[1].ToTaskNode())
+	require.Len(t, edges, 1)
+	assert.Equal(t, tasks[0].Id, edges[0].From.ID)
 }
 
 func TestReachableFromNode(t *testing.T) {

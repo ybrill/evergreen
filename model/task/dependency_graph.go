@@ -145,21 +145,22 @@ func (g *DependencyGraph) addEdgeToGraph(edge DependencyEdge) {
 	g.edgesToDependencies[edgeKey{from: edge.From, to: edge.To}] = edge
 }
 
-// TasksPointingToTask returns all the nodes in the graph that depend directly on t.
-// If the graph is reversed it returns all the nodes t directly depends on.
-func (g *DependencyGraph) TasksPointingToTask(t TaskNode) []TaskNode {
-	dependedOnNode := g.tasksToNodes[t]
-	if dependedOnNode == nil {
+// EdgesIntoTask returns all the edges that point to t.
+// For a regular graph these edges are tasks that directly depend on t.
+// If the graph is reversed these edges are tasks t directly depends on.
+func (g *DependencyGraph) EdgesIntoTask(t TaskNode) []DependencyEdge {
+	node := g.tasksToNodes[t]
+	if node == nil {
 		return nil
 	}
 
-	var dependentTasks []TaskNode
-	nodes := g.graph.To(dependedOnNode.ID())
+	var edges []DependencyEdge
+	nodes := g.graph.To(node.ID())
 	for nodes.Next() {
-		dependentTasks = append(dependentTasks, g.nodesToTasks[nodes.Node()])
+		edges = append(edges, g.edgesToDependencies[edgeKey{from: g.nodesToTasks[nodes.Node()], to: t}])
 	}
 
-	return dependentTasks
+	return edges
 }
 
 // GetDependencyEdge returns a pointer to the edge from fromNode to toNode.
