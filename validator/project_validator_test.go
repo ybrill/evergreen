@@ -3305,351 +3305,123 @@ func TestTVToTaskUnit(t *testing.T) {
 	}
 }
 
-func TestDependenciesForTaskUnit(t *testing.T) {
-	for testName, testCase := range map[string]struct {
-		expectedDepsToTVs map[model.TaskUnitDependency][]model.TVPair
-		tv                model.TVPair
-		taskUnit          model.BuildVariantTaskUnit
-		allTVs            []model.TVPair
-	}{
-		"WithExplicitVariants": {
-			tv: model.TVPair{
-				TaskName: "compile",
-				Variant:  "ubuntu",
-			},
-			taskUnit: model.BuildVariantTaskUnit{
-				Name:    "compile",
-				Variant: "ubuntu",
-				DependsOn: []model.TaskUnitDependency{
-					{
-						Name:    "setup",
-						Variant: "rhel",
-					},
-				},
-			},
-			allTVs: []model.TVPair{
-				{TaskName: "setup", Variant: "rhel"},
-				{TaskName: "compile", Variant: "ubuntu"},
-			},
-			expectedDepsToTVs: map[model.TaskUnitDependency][]model.TVPair{
-				model.TaskUnitDependency{Name: "setup", Variant: "rhel"}: []model.TVPair{
-					{TaskName: "setup", Variant: "rhel"},
-				},
-			},
-		},
-		"WithDependencyVariantsBasedOnTaskUnit": {
-			tv: model.TVPair{
-				TaskName: "compile",
-				Variant:  "ubuntu",
-			},
-			taskUnit: model.BuildVariantTaskUnit{
-				Name:    "compile",
-				Variant: "ubuntu",
-				DependsOn: []model.TaskUnitDependency{
-					{
-						Name: "setup",
-					},
-				},
-			},
-			allTVs: []model.TVPair{
-				{TaskName: "setup", Variant: "rhel"},
-				{TaskName: "compile", Variant: "rhel"},
-				{TaskName: "setup", Variant: "ubuntu"},
-				{TaskName: "compile", Variant: "ubuntu"},
-			},
-			expectedDepsToTVs: map[model.TaskUnitDependency][]model.TVPair{
-				model.TaskUnitDependency{Name: "setup"}: []model.TVPair{
-					{TaskName: "setup", Variant: "ubuntu"},
-				},
-			},
-		},
-		"WithOneTaskAndAllVariants": {
-			tv: model.TVPair{
-				TaskName: "compile",
-				Variant:  "ubuntu",
-			},
-			taskUnit: model.BuildVariantTaskUnit{
-				Name:    "compile",
-				Variant: "ubuntu",
-				DependsOn: []model.TaskUnitDependency{
-					{
-						Name:    "setup",
-						Variant: model.AllVariants,
-					},
-				},
-			},
-			allTVs: []model.TVPair{
-				{TaskName: "setup", Variant: "rhel"},
-				{TaskName: "compile", Variant: "rhel"},
-				{TaskName: "setup", Variant: "ubuntu"},
-				{TaskName: "compile", Variant: "ubuntu"},
-			},
-			expectedDepsToTVs: map[model.TaskUnitDependency][]model.TVPair{
-				model.TaskUnitDependency{Name: "setup", Variant: model.AllVariants}: []model.TVPair{
-					{TaskName: "setup", Variant: "rhel"},
-					{TaskName: "setup", Variant: "ubuntu"},
-				},
-			},
-		},
-		"WithAllTasksAndOneVariant": {
-			tv: model.TVPair{
-				TaskName: "compile",
-				Variant:  "ubuntu",
-			},
-			taskUnit: model.BuildVariantTaskUnit{
-				Name:    "compile",
-				Variant: "ubuntu",
-				DependsOn: []model.TaskUnitDependency{
-					{
-						Name:    model.AllDependencies,
-						Variant: "rhel",
-					},
-				},
-			},
-			allTVs: []model.TVPair{
-				{TaskName: "setup", Variant: "rhel"},
-				{TaskName: "compile", Variant: "rhel"},
-				{TaskName: "setup", Variant: "ubuntu"},
-				{TaskName: "compile", Variant: "ubuntu"},
-			},
-			expectedDepsToTVs: map[model.TaskUnitDependency][]model.TVPair{
-				model.TaskUnitDependency{Name: model.AllDependencies, Variant: "rhel"}: []model.TVPair{
-					{TaskName: "setup", Variant: "rhel"},
-				},
-			},
-		},
-		"WithAllTasksAndOneVariantBasedOnTaskUnit": {
-			tv: model.TVPair{
-				TaskName: "compile",
-				Variant:  "ubuntu",
-			},
-			taskUnit: model.BuildVariantTaskUnit{
-				Name:    "compile",
-				Variant: "ubuntu",
-				DependsOn: []model.TaskUnitDependency{
-					{
-						Name: model.AllDependencies,
-					},
-				},
-			},
-			allTVs: []model.TVPair{
-				{TaskName: "setup", Variant: "rhel"},
-				{TaskName: "compile", Variant: "rhel"},
-				{TaskName: "setup", Variant: "ubuntu"},
-				{TaskName: "compile", Variant: "ubuntu"},
-			},
-			expectedDepsToTVs: map[model.TaskUnitDependency][]model.TVPair{
-				model.TaskUnitDependency{Name: model.AllDependencies}: []model.TVPair{
-					{TaskName: "setup", Variant: "ubuntu"},
-				},
-			},
-		},
-		"WithAllTasksAndAllVariants": {
-			tv: model.TVPair{
-				TaskName: "compile",
-				Variant:  "ubuntu",
-			},
-			taskUnit: model.BuildVariantTaskUnit{
-				Name:    "compile",
-				Variant: "ubuntu",
-				DependsOn: []model.TaskUnitDependency{
-					{
-						Name:    model.AllDependencies,
-						Variant: model.AllVariants,
-					},
-				},
-			},
-			allTVs: []model.TVPair{
-				{TaskName: "setup", Variant: "rhel"},
-				{TaskName: "compile", Variant: "rhel"},
-				{TaskName: "setup", Variant: "ubuntu"},
-				{TaskName: "compile", Variant: "ubuntu"},
-			},
-			expectedDepsToTVs: map[model.TaskUnitDependency][]model.TVPair{
-				model.TaskUnitDependency{Name: model.AllDependencies, Variant: model.AllVariants}: []model.TVPair{
-					{TaskName: "setup", Variant: "rhel"},
-					{TaskName: "compile", Variant: "rhel"},
-					{TaskName: "setup", Variant: "ubuntu"},
-				},
-			},
-		},
-	} {
-		t.Run(testName, func(t *testing.T) {
-			depsToTVs := dependenciesForTaskUnit(testCase.tv, testCase.taskUnit, testCase.allTVs)
-			assert.Len(t, depsToTVs, len(testCase.expectedDepsToTVs))
-			for expectedDep, expectedTVs := range testCase.expectedDepsToTVs {
-				assert.Contains(t, depsToTVs, expectedDep)
-				assert.Equal(t, expectedTVs, depsToTVs[expectedDep])
-			}
-		})
-	}
-}
-
 func TestDependencyMustRun(t *testing.T) {
 	for testName, testCase := range map[string]struct {
-		source                model.TVPair
-		target                model.TVPair
-		depReqs               dependencyRequirements
-		tvToTaskUnit          map[model.TVPair]model.BuildVariantTaskUnit
-		expectDependencyFound bool
+		dependedOnTask model.TVPair
+		dependentTask  model.TVPair
+		statuses       []string
+		tasks          []model.BuildVariantTaskUnit
+		expectError    bool
 	}{
 		"FindsDependency": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: true,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:    "A",
+					Variant: "ubuntu",
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "B", Variant: "ubuntu"},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {},
+				{Name: "B", Variant: "ubuntu"},
 			},
-			expectDependencyFound: true,
+			expectError: false,
 		},
 		"FindsDependencyWithoutExplicitBV": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: true,
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{Name: "A", Variant: "ubuntu", DependsOn: []model.TaskUnitDependency{{Name: "B"}}},
+				{Name: "B", Variant: "ubuntu"},
 			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
-					DependsOn: []model.TaskUnitDependency{
-						{Name: "B"},
-					},
-				},
-				{TaskName: "B", Variant: "ubuntu"}: {},
-			},
-			expectDependencyFound: true,
+			expectError: false,
 		},
 		"FindsDependencyTransitively": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "C", Variant: "rhel"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: true,
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "C", Variant: "rhel"},
+			tasks: []model.BuildVariantTaskUnit{
+				{Name: "A", Variant: "ubuntu", DependsOn: []model.TaskUnitDependency{{Name: "B"}}},
+				{Name: "B", Variant: "ubuntu", DependsOn: []model.TaskUnitDependency{{Name: "C", Variant: "rhel"}}},
+				{Name: "C", Variant: "rhel"},
 			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
-					DependsOn: []model.TaskUnitDependency{
-						{Name: "B"},
-					},
-				},
-				{TaskName: "B", Variant: "ubuntu"}: {
-					DependsOn: []model.TaskUnitDependency{
-						{Name: "C", Variant: "rhel"},
-					},
-				},
-				{TaskName: "C", Variant: "rhel"}: {},
+			expectError: false,
+		},
+		"FailsForDependencyOnSelf": {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{Name: "A", Variant: "ubuntu"},
 			},
-			expectDependencyFound: true,
+			expectError: true,
+		},
+		"FailsForNoDependency": {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{Name: "A", Variant: "ubuntu"},
+			},
+			expectError: true,
 		},
 		"FailsIfDependencySkipsPatches": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: true,
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{Name: "A", Variant: "ubuntu", DependsOn: []model.TaskUnitDependency{{Name: "B", Variant: "ubuntu"}}},
+				{Name: "B", Variant: "ubuntu", Patchable: utility.FalsePtr()},
 			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
-					DependsOn: []model.TaskUnitDependency{
-						{Name: "B", Variant: "ubuntu"},
-					},
-				},
-				{TaskName: "B", Variant: "ubuntu"}: {
-					Patchable: utility.FalsePtr(),
-				},
-			},
-			expectDependencyFound: false,
+			expectError: true,
 		},
 		"FailsIfIntermediateDependencySkipsPatches": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "C", Variant: "rhel"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: true,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
-					DependsOn: []model.TaskUnitDependency{
-						{Name: "B"},
-					},
-				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "C", Variant: "rhel"},
+			tasks: []model.BuildVariantTaskUnit{
+				{Name: "A", Variant: "ubuntu", DependsOn: []model.TaskUnitDependency{{Name: "B"}}},
+				{
+					Name:      "B",
+					Variant:   "ubuntu",
 					Patchable: utility.FalsePtr(),
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "C", Variant: "rhel"},
 					},
 				},
-				{TaskName: "C", Variant: "rhel"}: {},
+				{Name: "C", Variant: "rhel"},
 			},
-			expectDependencyFound: false,
+			expectError: true,
 		},
 		"FailsIfDependencySkipsNonPatches": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: true,
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{Name: "A", Variant: "ubuntu", DependsOn: []model.TaskUnitDependency{{Name: "B", Variant: "ubuntu"}}},
+				{Name: "B", Variant: "ubuntu", Patchable: utility.FalsePtr()},
 			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
-					DependsOn: []model.TaskUnitDependency{
-						{Name: "B", Variant: "ubuntu"},
-					},
-				},
-				{TaskName: "B", Variant: "ubuntu"}: {
-					Patchable: utility.FalsePtr(),
-				},
-			},
-			expectDependencyFound: false,
+			expectError: true,
 		},
 		"FailsIfIntermediateDependencySkipsNonPatches": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "C", Variant: "rhel"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: true,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
-					DependsOn: []model.TaskUnitDependency{
-						{Name: "B"},
-					},
-				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "C", Variant: "rhel"},
+			tasks: []model.BuildVariantTaskUnit{
+				{Name: "A", Variant: "ubuntu", DependsOn: []model.TaskUnitDependency{{Name: "B"}}},
+				{
+					Name:      "B",
+					Variant:   "ubuntu",
 					PatchOnly: utility.TruePtr(),
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "C", Variant: "rhel"},
 					},
 				},
-				{TaskName: "C", Variant: "rhel"}: {},
+				{Name: "C", Variant: "rhel"},
 			},
-			expectDependencyFound: false,
+			expectError: true,
 		},
 		"FailsIfDependencyIsPatchOptional": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: true,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:    "A",
+					Variant: "ubuntu",
 					DependsOn: []model.TaskUnitDependency{
 						{
 							Name:          "B",
@@ -3658,66 +3430,69 @@ func TestDependencyMustRun(t *testing.T) {
 						},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {},
+				{Name: "B", Variant: "ubuntu"},
 			},
-			expectDependencyFound: false,
+			expectError: true,
 		},
 		"FailsIfIntermediateDependencyIsPatchOptional": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "C", Variant: "rhel"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: true,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "C", Variant: "rhel"},
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:    "A",
+					Variant: "ubuntu",
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "B", Variant: "ubuntu"},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+				{
+					Name:    "B",
+					Variant: "ubuntu",
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "C", Variant: "rhel", PatchOptional: true},
 					},
 				},
-				{TaskName: "C", Variant: "rhel"}: {},
+				{Name: "C", Variant: "rhel"},
 			},
-			expectDependencyFound: false,
+			expectError: true,
 		},
 		"OnlyLastDependencyRequiresSuccessStatus": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "C", Variant: "rhel"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: true,
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "C", Variant: "rhel"},
+			statuses: []string{
+				evergreen.TaskSucceeded,
+				"",
 			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:    "A",
+					Variant: "ubuntu",
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "B", Status: evergreen.TaskFailed},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+				{
+					Name:    "B",
+					Variant: "ubuntu",
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "C", Variant: "rhel"},
 					},
 				},
-				{TaskName: "C", Variant: "rhel"}: {},
+				{Name: "C", Variant: "rhel"},
 			},
-			expectDependencyFound: true,
+			expectError: false,
 		},
 		"FailsIfDependencyDoesNotRequireSuccessStatus": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: true,
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			statuses: []string{
+				evergreen.TaskSucceeded,
+				"",
 			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:    "A",
+					Variant: "ubuntu",
 					DependsOn: []model.TaskUnitDependency{
 						{
 							Name:    "B",
@@ -3726,264 +3501,254 @@ func TestDependencyMustRun(t *testing.T) {
 						},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {},
+				{Name: "B", Variant: "ubuntu"},
 			},
-			expectDependencyFound: false,
+			expectError: true,
 		},
 		"FailsIfLastDependencyDoesNotRequireSuccessStatus": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "C", Variant: "rhel"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: true,
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "C", Variant: "rhel"},
+			statuses: []string{
+				evergreen.TaskSucceeded,
+				"",
 			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:    "A",
+					Variant: "ubuntu",
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "B"},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+				{
+					Name:    "B",
+					Variant: "ubuntu",
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "C", Variant: "rhel", Status: evergreen.TaskFailed},
 					},
 				},
-				{TaskName: "C", Variant: "rhel"}: {},
+				{Name: "C", Variant: "rhel"},
 			},
-			expectDependencyFound: false,
+			expectError: true,
 		},
 		"DependencyCanSkipPatchesIfSourceSkipsPatches": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    false,
-				requireOnNonPatches: true,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:      "A",
+					Variant:   "ubuntu",
 					Patchable: utility.FalsePtr(),
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "B", Variant: "ubuntu"},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+				{
+					Name:      "B",
+					Variant:   "ubuntu",
 					Patchable: utility.FalsePtr(),
 				},
 			},
-			expectDependencyFound: true,
+			expectError: false,
 		},
 		"IntermediateDependencyCanSkipPatchesIfSourceSkipsPatches": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "C", Variant: "rhel"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    false,
-				requireOnNonPatches: true,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "C", Variant: "rhel"},
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:      "A",
+					Variant:   "ubuntu",
 					Patchable: utility.FalsePtr(),
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "B"},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+				{
+					Name:      "B",
+					Variant:   "ubuntu",
 					Patchable: utility.FalsePtr(),
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "C", Variant: "rhel", Status: evergreen.TaskFailed},
 					},
 				},
-				{TaskName: "C", Variant: "rhel"}: {},
+				{Name: "C", Variant: "rhel"},
 			},
-			expectDependencyFound: false,
+			expectError: true,
 		},
 		"DependencyCanSkipNonPatchesIfSourceSkipsNonPatches": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: false,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:      "A",
+					Variant:   "ubuntu",
 					PatchOnly: utility.TruePtr(),
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "B", Variant: "ubuntu"},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+				{
+					Name:      "B",
+					Variant:   "ubuntu",
 					PatchOnly: utility.TruePtr(),
 				},
 			},
-			expectDependencyFound: true,
+			expectError: false,
 		},
 		"IntermediateDependencyCanSkipNonPatchesIfSourceSkipsNonPatches": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "C", Variant: "rhel"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: false,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "C", Variant: "rhel"},
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:      "A",
+					Variant:   "ubuntu",
 					PatchOnly: utility.TruePtr(),
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "B"},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+				{
+					Name:      "B",
+					Variant:   "ubuntu",
 					PatchOnly: utility.TruePtr(),
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "C", Variant: "rhel"},
 					},
 				},
-				{TaskName: "C", Variant: "rhel"}: {},
+				{Name: "C", Variant: "rhel"},
 			},
-			expectDependencyFound: true,
+			expectError: false,
 		},
 		"DependencySkipsGitTagsIfSourceRequiresPatches": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    true,
-				requireOnNonPatches: false,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:      "A",
+					Variant:   "ubuntu",
 					PatchOnly: utility.TruePtr(),
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "B", Variant: "ubuntu"},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+				{
+					Name:       "B",
+					Variant:    "ubuntu",
 					GitTagOnly: utility.TruePtr(),
 				},
 			},
-			expectDependencyFound: false,
+			expectError: true,
 		},
 		"DependencySkipsGitTagsIfSourceRequiresNonPatches": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    false,
-				requireOnNonPatches: true,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:      "A",
+					Variant:   "ubuntu",
 					Patchable: utility.FalsePtr(),
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "B", Variant: "ubuntu"},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+				{
+					Name:       "B",
+					Variant:    "ubuntu",
 					GitTagOnly: utility.TruePtr(),
 				},
 			},
-			expectDependencyFound: false,
+			expectError: true,
 		},
 		"DependencySkipsGitTagsIfNotAllowedForGitTags": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    false,
-				requireOnNonPatches: false,
-				requireOnGitTag:     true,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:      "A",
+					Variant:   "ubuntu",
 					Patchable: utility.FalsePtr(),
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "B", Variant: "ubuntu"},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+				{
+					Name:           "B",
+					Variant:        "ubuntu",
 					AllowForGitTag: utility.FalsePtr(),
 				},
 			},
-			expectDependencyFound: false,
+			expectError: true,
 		},
 		"DependencyIncludesGitTagsIfAllowed": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    false,
-				requireOnNonPatches: false,
-				requireOnGitTag:     true,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:    "A",
+					Variant: "ubuntu",
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "B", Variant: "ubuntu"},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+				{
+					Name:           "B",
+					Variant:        "ubuntu",
 					AllowForGitTag: utility.TruePtr(),
 				},
 			},
-			expectDependencyFound: true,
+			expectError: false,
 		},
 		"DependencySkipsPatchIfSourceIncludesGitTags": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    false,
-				requireOnNonPatches: false,
-				requireOnGitTag:     true,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:    "A",
+					Variant: "ubuntu",
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "B", Variant: "ubuntu"},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+				{
+					Name:      "B",
+					Variant:   "ubuntu",
 					PatchOnly: utility.TruePtr(),
 				},
 			},
-			expectDependencyFound: false,
+			expectError: true,
 		},
 		"DependencyIncludesGitTagsWithGitTagOnly": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			depReqs: dependencyRequirements{
-				lastDepNeedsSuccess: true,
-				requireOnPatches:    false,
-				requireOnNonPatches: false,
-			},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
+			dependentTask:  model.TVPair{TaskName: "A", Variant: "ubuntu"},
+			dependedOnTask: model.TVPair{TaskName: "B", Variant: "ubuntu"},
+			tasks: []model.BuildVariantTaskUnit{
+				{
+					Name:    "A",
+					Variant: "ubuntu",
 					DependsOn: []model.TaskUnitDependency{
 						{Name: "B", Variant: "ubuntu"},
 					},
 				},
-				{TaskName: "B", Variant: "ubuntu"}: {
+				{
+					Name:       "B",
+					Variant:    "ubuntu",
 					GitTagOnly: utility.TruePtr(),
 				},
 			},
-			expectDependencyFound: true,
+			expectError: false,
 		},
 	} {
 		t.Run(testName, func(t *testing.T) {
-			visited := map[model.TVPair]bool{}
-			allNodes := []model.TVPair{}
-
-			for tv := range testCase.tvToTaskUnit {
-				visited[tv] = false
-				allNodes = append(allNodes, tv)
+			err := validateTVDependsOnTV(
+				testCase.dependentTask,
+				testCase.dependedOnTask,
+				testCase.statuses,
+				&model.Project{BuildVariants: []model.BuildVariant{{Tasks: testCase.tasks}}},
+			)
+			if testCase.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
 			}
-
-			dependencyFound, err := dependencyMustRun(testCase.target, testCase.source, testCase.depReqs, allNodes, visited, testCase.tvToTaskUnit)
-			require.NoError(t, err)
-			assert.Equal(t, testCase.expectDependencyFound, dependencyFound)
 		})
 	}
 }
@@ -4981,67 +4746,6 @@ func TestBVsWithTasksThatCallCommand(t *testing.T) {
 			})
 		}
 	})
-}
-
-func TestValidateTVDependsOnTV(t *testing.T) {
-	for testName, testCase := range map[string]struct {
-		source       model.TVPair
-		target       model.TVPair
-		tvToTaskUnit map[model.TVPair]model.BuildVariantTaskUnit
-		expectError  bool
-	}{
-		"PassesForValidDependency": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "rhel"},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
-					DependsOn: []model.TaskUnitDependency{
-						{Name: "B", Variant: "rhel"},
-					},
-				},
-				{TaskName: "B", Variant: "rhel"}: {},
-			},
-			expectError: false,
-		},
-		"PassesForValidDependencyImplicitlyInSameBuildVariant": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {
-					DependsOn: []model.TaskUnitDependency{
-						{Name: "B"},
-					},
-				},
-				{TaskName: "B", Variant: "ubuntu"}: {},
-			},
-			expectError: false,
-		},
-		"FailsForDependencyOnSelf": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {},
-			},
-			expectError: true,
-		},
-		"FailsForNoDependency": {
-			source: model.TVPair{TaskName: "A", Variant: "ubuntu"},
-			target: model.TVPair{TaskName: "B", Variant: "ubuntu"},
-			tvToTaskUnit: map[model.TVPair]model.BuildVariantTaskUnit{
-				{TaskName: "A", Variant: "ubuntu"}: {},
-			},
-			expectError: true,
-		},
-	} {
-		t.Run(testName, func(t *testing.T) {
-			err := validateTVDependsOnTV(testCase.source, testCase.target, testCase.tvToTaskUnit)
-			if testCase.expectError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
 }
 
 func TestValidationErrorsAtLevel(t *testing.T) {
