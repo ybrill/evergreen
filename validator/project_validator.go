@@ -331,7 +331,7 @@ func validateAllDependenciesSpec(project *model.Project) ValidationErrors {
 	return errs
 }
 
-// validateDependencyGraph returns an non-nil ValidationErrors if the dependency graph contains cycles.
+// validateDependencyGraph returns a non-nil ValidationErrors if the dependency graph contains cycles.
 func validateDependencyGraph(project *model.Project) ValidationErrors {
 	var errs ValidationErrors
 	graph := project.DependencyGraph()
@@ -1695,8 +1695,8 @@ func validateTVDependsOnTV(dependentTask, dependedOnTask model.TVPair, statuses 
 		dependent := edge.From
 		dependedOn := edge.To
 
-		dependedOnTaskUnit := tvTaskUnitMap[model.TVPair{TaskName: dependedOn.Name, Variant: dependedOn.Variant}]
 		dependentTaskUnit := tvTaskUnitMap[model.TVPair{TaskName: dependent.Name, Variant: dependent.Variant}]
+		dependedOnTaskUnit := tvTaskUnitMap[model.TVPair{TaskName: dependedOn.Name, Variant: dependedOn.Variant}]
 
 		var dep model.TaskUnitDependency
 		for _, dependency := range dependentTaskUnit.DependsOn {
@@ -1705,19 +1705,21 @@ func validateTVDependsOnTV(dependentTask, dependedOnTask model.TVPair, statuses 
 			}
 		}
 
-		// TODO rethink this comment
-		if !dependentTaskUnit.SkipOnPatchBuild() && !dependentTaskUnit.SkipOnNonGitTagBuild() &&
-			(dependedOnTaskUnit.SkipOnPatchBuild() || dependedOnTaskUnit.SkipOnNonGitTagBuild() || dep.PatchOptional) {
+		dependentRunsOnPatches := !dependentTaskUnit.SkipOnPatchBuild() && !dependentTaskUnit.SkipOnNonGitTagBuild()
+		dependedOnSkippedForPatches := dependedOnTaskUnit.SkipOnPatchBuild() || dependedOnTaskUnit.SkipOnNonGitTagBuild()
+		if dependentRunsOnPatches && (dependedOnSkippedForPatches || dep.PatchOptional) {
 			return false
 		}
 
-		if !dependentTaskUnit.SkipOnNonPatchBuild() && !dependentTaskUnit.SkipOnNonGitTagBuild() &&
-			dependedOnTaskUnit.SkipOnNonPatchBuild() || dependedOnTaskUnit.SkipOnNonGitTagBuild() {
+		dependentRunsOnNonPatches := !dependentTaskUnit.SkipOnNonPatchBuild() && !dependentTaskUnit.SkipOnNonGitTagBuild()
+		dependedOnSkippedForNonPatches := dependedOnTaskUnit.SkipOnNonPatchBuild() || dependedOnTaskUnit.SkipOnNonGitTagBuild()
+		if dependentRunsOnNonPatches && dependedOnSkippedForNonPatches {
 			return false
 		}
 
-		if !dependentTaskUnit.SkipOnNonPatchBuild() && !dependentTaskUnit.SkipOnGitTagBuild() &&
-			dependedOnTaskUnit.SkipOnNonPatchBuild() || dependedOnTaskUnit.SkipOnGitTagBuild() {
+		dependentRunsOnGitTags := !dependentTaskUnit.SkipOnNonPatchBuild() && !dependentTaskUnit.SkipOnGitTagBuild()
+		dependedOnSkippedForGitTags := dependedOnTaskUnit.SkipOnNonPatchBuild() || dependedOnTaskUnit.SkipOnGitTagBuild()
+		if dependentRunsOnGitTags && dependedOnSkippedForGitTags {
 			return false
 		}
 
