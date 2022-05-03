@@ -233,6 +233,7 @@ func (bvt *BuildVariantTaskUnit) SkipOnRequester(requester string) bool {
 		evergreen.IsGitTagRequester(requester) && bvt.SkipOnGitTagBuild() ||
 		!evergreen.IsGitTagRequester(requester) && bvt.SkipOnNonGitTagBuild()
 }
+
 func (bvt *BuildVariantTaskUnit) SkipOnPatchBuild() bool {
 	return !utility.FromBoolTPtr(bvt.Patchable)
 }
@@ -247,6 +248,18 @@ func (bvt *BuildVariantTaskUnit) SkipOnGitTagBuild() bool {
 
 func (bvt *BuildVariantTaskUnit) SkipOnNonGitTagBuild() bool {
 	return utility.FromBoolPtr(bvt.GitTagOnly)
+}
+
+func (bvt *BuildVariantTaskUnit) RunsOnPatches() bool {
+	return !(bvt.SkipOnPatchBuild() || bvt.SkipOnNonGitTagBuild())
+}
+
+func (bvt *BuildVariantTaskUnit) RunsOnNonPatches() bool {
+	return !(bvt.SkipOnNonPatchBuild() || bvt.SkipOnNonGitTagBuild())
+}
+
+func (bvt *BuildVariantTaskUnit) RunsOnGitTag() bool {
+	return !(bvt.SkipOnNonPatchBuild() || bvt.SkipOnGitTagBuild())
 }
 
 func (bvt *BuildVariantTaskUnit) IsDisabled() bool {

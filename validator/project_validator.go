@@ -1705,21 +1705,13 @@ func validateTVDependsOnTV(dependentTask, dependedOnTask model.TVPair, statuses 
 			}
 		}
 
-		dependentRunsOnPatches := !dependentTaskUnit.SkipOnPatchBuild() && !dependentTaskUnit.SkipOnNonGitTagBuild()
-		dependedOnSkippedForPatches := dependedOnTaskUnit.SkipOnPatchBuild() || dependedOnTaskUnit.SkipOnNonGitTagBuild()
-		if dependentRunsOnPatches && (dependedOnSkippedForPatches || dep.PatchOptional) {
+		if dependentTaskUnit.RunsOnPatches() && (!dependedOnTaskUnit.RunsOnPatches() || dep.PatchOptional) {
 			return false
 		}
-
-		dependentRunsOnNonPatches := !dependentTaskUnit.SkipOnNonPatchBuild() && !dependentTaskUnit.SkipOnNonGitTagBuild()
-		dependedOnSkippedForNonPatches := dependedOnTaskUnit.SkipOnNonPatchBuild() || dependedOnTaskUnit.SkipOnNonGitTagBuild()
-		if dependentRunsOnNonPatches && dependedOnSkippedForNonPatches {
+		if dependentTaskUnit.RunsOnNonPatches() && !dependedOnTaskUnit.RunsOnNonPatches() {
 			return false
 		}
-
-		dependentRunsOnGitTags := !dependentTaskUnit.SkipOnNonPatchBuild() && !dependentTaskUnit.SkipOnGitTagBuild()
-		dependedOnSkippedForGitTags := dependedOnTaskUnit.SkipOnNonPatchBuild() || dependedOnTaskUnit.SkipOnGitTagBuild()
-		if dependentRunsOnGitTags && dependedOnSkippedForGitTags {
+		if dependentTaskUnit.RunsOnGitTag() && !dependedOnTaskUnit.RunsOnGitTag() {
 			return false
 		}
 
@@ -1732,22 +1724,24 @@ func validateTVDependsOnTV(dependentTask, dependedOnTask model.TVPair, statuses 
 
 	if found := g.DepthFirstSearch(dependentNode, dependedOnNode, traversal); !found {
 		dependentBVTask := tvTaskUnitMap[dependentTask]
-		requireOnPatches := !dependentBVTask.SkipOnPatchBuild() && !dependentBVTask.SkipOnNonGitTagBuild()
-		requireOnNonPatches := !dependentBVTask.SkipOnNonPatchBuild() && !dependentBVTask.SkipOnNonGitTagBuild()
-		requireOnGitTag := !dependentBVTask.SkipOnNonPatchBuild() && !dependentBVTask.SkipOnGitTagBuild()
-
-		errMsg := "task '%s' on build variant '%s' must depend on" +
-			" task '%s' in build variant '%s' completing with status in [%s]"
-		if requireOnPatches && requireOnNonPatches {
+		errMsg := "task '%s' in build variant '%s' must depend on" +
+			" task '%s' in build variant '%s' completing"
+		if dependentBVTask.RunsOnPatches() && dependentBVTask.RunsOnNonPatches() {
 			errMsg += " for both patches and non-patches"
-		} else if requireOnPatches {
+		} else if dependentBVTask.RunsOnPatches() {
 			errMsg += " for patches"
-		} else if requireOnNonPatches {
+		} else if dependentBVTask.RunsOnNonPatches() {
 			errMsg += " for non-patches"
-		} else if requireOnGitTag {
+		} else if dependentBVTask.RunsOnGitTag() {
 			errMsg += " for git-tag builds"
 		}
-		return errors.Errorf(errMsg, dependentTask.TaskName, dependentTask.Variant, dependedOnTask.TaskName, dependedOnTask.Variant, strings.Join(statuses, ", "))
+		errMsg = fmt.Sprintf(errMsg, dependentTask.TaskName, dependentTask.Variant, dependedOnTask.TaskName, dependedOnTask.Variant)
+
+		if statuses != nil {
+			errMsg = fmt.Sprintf(errMsg+" with status in [%s]", strings.Join(statuses, ", "))
+		}
+
+		return errors.New(errMsg)
 	}
 	return nil
 }
