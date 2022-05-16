@@ -1526,7 +1526,7 @@ func sortLayer(layer []task.Task, idToDisplayName map[string]string) []task.Task
 // (see AddNewTasksForPatch). New builds/tasks are activated depending on their batchtime.
 // Returns activated task IDs.
 func addNewBuilds(ctx context.Context, activationInfo specificActivationInfo, v *Version, p *Project, tasks TaskVariantPairs,
-	existingBuilds []build.Build, syncAtEndOpts patch.SyncAtEndOptions, projectRef *ProjectRef, generatedBy string) ([]string, error) {
+	existingBuilds []build.Build, syncAtEndOpts patch.SyncAtEndOptions, projectRef *ProjectRef, generatedBy string) (task.Tasks, error) {
 
 	taskIdTables, err := getTaskIdTables(v, p, tasks, projectRef.Identifier)
 	if err != nil {
@@ -1534,7 +1534,7 @@ func addNewBuilds(ctx context.Context, activationInfo specificActivationInfo, v 
 	}
 
 	newBuildIds := make([]string, 0)
-	newActivatedTaskIds := make([]string, 0)
+	newTasks := make(task.Tasks, 0)
 	newBuildStatuses := make([]VersionBuildStatus, 0)
 
 	variantsProcessed := map[string]bool{}
@@ -1598,12 +1598,10 @@ func addNewBuilds(ctx context.Context, activationInfo specificActivationInfo, v 
 			return nil, errors.Wrapf(err, "inserting tasks for build '%s'", build.Id)
 		}
 		newBuildIds = append(newBuildIds, build.Id)
+		newTasks = append(newTasks, tasks...)
 
 		batchTimeTasksToIds := map[string]string{}
 		for _, t := range tasks {
-			if t.Activated {
-				newActivatedTaskIds = append(newActivatedTaskIds, t.Id)
-			}
 			if activationInfo.taskHasSpecificActivation(t.BuildVariant, t.DisplayName) {
 				batchTimeTasksToIds[t.DisplayName] = t.Id
 			}
@@ -1645,7 +1643,7 @@ func addNewBuilds(ctx context.Context, activationInfo specificActivationInfo, v 
 		"version": v.Id,
 	}))
 
-	return newActivatedTaskIds, errors.WithStack(VersionUpdateOne(
+	return newTasks, errors.WithStack(VersionUpdateOne(
 		bson.M{VersionIdKey: v.Id},
 		bson.M{
 			"$push": bson.M{
@@ -1659,7 +1657,7 @@ func addNewBuilds(ctx context.Context, activationInfo specificActivationInfo, v 
 // Given a version and set of variant/task pairs, creates any tasks that don't exist yet,
 // within the set of already existing builds. Returns activated task IDs.
 func addNewTasks(ctx context.Context, activationInfo specificActivationInfo, v *Version, p *Project, pRef *ProjectRef, pairs TaskVariantPairs,
-	existingBuilds []build.Build, syncAtEndOpts patch.SyncAtEndOptions, generatedBy string) ([]string, error) {
+	existingBuilds []build.Build, syncAtEndOpts patch.SyncAtEndOptions, generatedBy string) (task.Tasks, error) {
 	if v.BuildIds == nil {
 		return nil, nil
 	}
@@ -1674,7 +1672,7 @@ func addNewTasks(ctx context.Context, activationInfo specificActivationInfo, v *
 		return nil, errors.Wrap(err, "getting table of task IDs")
 	}
 
-	activatedTaskIds := []string{}
+	newTasks := task.Tasks{}
 	for _, b := range existingBuilds {
 		wasActivated := b.Activated
 		// Find the set of task names that already exist for the given build
@@ -1728,10 +1726,10 @@ func addNewTasks(ctx context.Context, activationInfo specificActivationInfo, v *
 		if err != nil {
 			return nil, err
 		}
+		newTasks = append(newTasks, tasks...)
 
 		for _, t := range tasks {
 			if t.Activated {
-				activatedTaskIds = append(activatedTaskIds, t.Id)
 				b.Activated = true
 			}
 			if t.Activated && activationInfo.isStepbackTask(t.BuildVariant, t.DisplayName) {
@@ -1755,7 +1753,7 @@ func addNewTasks(ctx context.Context, activationInfo specificActivationInfo, v *
 		return nil, errors.Wrap(err, "setting version activation to true")
 	}
 
-	return activatedTaskIds, nil
+	return newTasks, nil
 }
 
 func getTaskIdTables(v *Version, p *Project, newPairs TaskVariantPairs, projectName string) (TaskIdConfig, error) {

@@ -10,6 +10,7 @@ import (
 	"github.com/evergreen-ci/evergreen/db"
 	"github.com/evergreen-ci/evergreen/model/build"
 	"github.com/evergreen-ci/evergreen/model/task"
+	"github.com/evergreen-ci/utility"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -1078,29 +1079,141 @@ func TestUpdateParserProject(t *testing.T) {
 }
 
 func TestAddDependencies(t *testing.T) {
-	require.NoError(t, db.Clear(task.Collection))
+	defer func() {
+		assert.NoError(t, db.Clear(task.Collection))
+	}()
 
-	existingTasks := []task.Task{
-		{Id: "t1", DependsOn: []task.Dependency{{TaskId: "generator", Status: evergreen.TaskSucceeded}}},
-		{Id: "t2", DependsOn: []task.Dependency{{TaskId: "generator", Status: task.AllStatuses}}},
-	}
-	for _, task := range existingTasks {
-		assert.NoError(t, task.Insert())
-	}
+	t.Run("NoActivatedNewTasks", func(t *testing.T) {
+		require.NoError(t, db.Clear(task.Collection))
+		existingTasks := []task.Task{
+			{Id: "t1", DependsOn: []task.Dependency{{TaskId: "generator", Status: evergreen.TaskSucceeded}}},
+			{Id: "t2", DependsOn: []task.Dependency{{TaskId: "generator", Status: task.AllStatuses}}},
+			{Id: "generator"},
+		}
+		for _, task := range existingTasks {
+			assert.NoError(t, task.Insert())
+		}
 
-	assert.NoError(t, addDependencies(&task.Task{Id: "generator"}, []string{"t3"}))
+		assert.NoError(t, addDependencies(&task.Task{Id: "generator"}, task.Tasks{{Id: "t3", Activated: false}}))
 
-	t1, err := task.FindOneId("t1")
-	assert.NoError(t, err)
-	assert.Len(t, t1.DependsOn, 2)
-	for _, dep := range t1.DependsOn {
-		assert.Equal(t, evergreen.TaskSucceeded, dep.Status)
-	}
+		t1, err := task.FindOneId("t1")
+		assert.NoError(t, err)
+		require.Len(t, t1.DependsOn, 1)
+		assert.Equal(t, "generator", t1.DependsOn[0].TaskId)
 
-	t2, err := task.FindOneId("t2")
-	assert.NoError(t, err)
-	assert.Len(t, t2.DependsOn, 2)
-	for _, dep := range t2.DependsOn {
-		assert.Equal(t, task.AllStatuses, dep.Status)
-	}
+		t2, err := task.FindOneId("t2")
+		assert.NoError(t, err)
+		require.Len(t, t2.DependsOn, 1)
+		assert.Equal(t, "generator", t2.DependsOn[0].TaskId)
+	})
+
+	t.Run("SomeActivatedNewTasks", func(t *testing.T) {
+		require.NoError(t, db.Clear(task.Collection))
+		existingTasks := []task.Task{
+			{Id: "t1", DependsOn: []task.Dependency{{TaskId: "generator", Status: evergreen.TaskSucceeded}}},
+			{Id: "t2", DependsOn: []task.Dependency{{TaskId: "generator", Status: task.AllStatuses}}},
+			{Id: "generator"},
+		}
+		for _, task := range existingTasks {
+			assert.NoError(t, task.Insert())
+		}
+
+		tasks := task.Tasks{
+			{Id: "t3", Activated: true},
+			{Id: "t4", Activated: false},
+		}
+		assert.NoError(t, addDependencies(&task.Task{Id: "generator"}, tasks))
+
+		t1, err := task.FindOneId("t1")
+		assert.NoError(t, err)
+		assert.Len(t, t1.DependsOn, 2)
+		for _, dep := range t1.DependsOn {
+			assert.True(t, utility.StringSliceContains([]string{"generator", "t3"}, dep.TaskId))
+			assert.Equal(t, evergreen.TaskSucceeded, dep.Status)
+		}
+
+		t2, err := task.FindOneId("t2")
+		assert.NoError(t, err)
+		assert.Len(t, t2.DependsOn, 2)
+		for _, dep := range t2.DependsOn {
+			assert.True(t, utility.StringSliceContains([]string{"generator", "t3"}, dep.TaskId))
+			assert.Equal(t, task.AllStatuses, dep.Status)
+		}
+	})
+}
+
+func TestSimulateNewDependencyGraph(t *testing.T) {
+	defer func() {
+		assert.NoError(t, db.Clear(task.Collection))
+	}()
+
+	t.Run("CreatesCycle", func(t *testing.T) {
+		require.NoError(t, db.Clear(task.Collection))
+		tasks := []task.Task{
+			{Id: "t0", Version: "v0", DependsOn: []task.Dependency{{TaskId: "generator", Status: evergreen.TaskSucceeded}}},
+			{Id: "generated", Version: "v0", DependsOn: []task.Dependency{{TaskId: "t0"}}},
+			{Id: "generator", Version: "v0"},
+		}
+		for _, task := range tasks {
+			assert.NoError(t, task.Insert())
+		}
+
+		dependencies, err := simulateNewDependencyGraph(&tasks[2], task.Tasks{&tasks[1]})
+		assert.Error(t, err)
+		assert.Nil(t, dependencies)
+	})
+
+	t.Run("NoCycles", func(t *testing.T) {
+		require.NoError(t, db.Clear(task.Collection))
+		tasks := []task.Task{
+			{Id: "t0", Version: "v0", DependsOn: []task.Dependency{{TaskId: "generator", Status: evergreen.TaskSucceeded}}},
+			{Id: "t1", Version: "v0", DependsOn: []task.Dependency{{TaskId: "generator", Status: task.AllStatuses}}},
+			{Id: "generated", Version: "v0"},
+			{Id: "generator", Version: "v0"},
+		}
+		for _, task := range tasks {
+			assert.NoError(t, task.Insert())
+		}
+
+		dependencies, err := simulateNewDependencyGraph(&tasks[3], task.Tasks{&tasks[2]})
+		assert.NoError(t, err)
+		assert.Len(t, dependencies, 2)
+		require.Len(t, dependencies[tasks[0].Id], 1)
+		assert.Equal(t, tasks[2].Id, dependencies[tasks[0].Id][0].TaskId)
+		assert.Equal(t, evergreen.TaskSucceeded, dependencies[tasks[0].Id][0].Status)
+
+		require.Len(t, dependencies[tasks[1].Id], 1)
+		assert.Equal(t, tasks[2].Id, dependencies[tasks[1].Id][0].TaskId)
+		assert.Equal(t, task.AllStatuses, dependencies[tasks[1].Id][0].Status)
+	})
+}
+
+func TestSaveDependenciesToTasks(t *testing.T) {
+	defer func() {
+		assert.NoError(t, db.Clear(task.Collection))
+	}()
+
+	t.Run("TaskExists", func(t *testing.T) {
+		require.NoError(t, db.Clear(task.Collection))
+		(&task.Task{Id: "t0"}).Insert()
+
+		newDependencies := map[string][]task.Dependency{
+			"t0": {{TaskId: "t3"}},
+		}
+		assert.NoError(t, saveDependenciesToTasks(newDependencies))
+		t0, err := task.FindOneId("t0")
+		assert.NoError(t, err)
+		require.NotNil(t, t0)
+		require.Len(t, t0.DependsOn, 1)
+		assert.Equal(t, "t3", t0.DependsOn[0].TaskId)
+	})
+
+	t.Run("NonexistentTask", func(t *testing.T) {
+		require.NoError(t, db.Clear(task.Collection))
+
+		newDependencies := map[string][]task.Dependency{
+			"t0": {{TaskId: "t3"}},
+		}
+		assert.Error(t, saveDependenciesToTasks(newDependencies))
+	})
 }
