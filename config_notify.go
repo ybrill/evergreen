@@ -1,6 +1,7 @@
 package evergreen
 
 import (
+	"github.com/mongodb/grip"
 	"github.com/pkg/errors"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -72,5 +73,32 @@ func (c *NotifyConfig) ValidateAndDefault() error {
 
 // SESConfig configures the SES email sender.
 type SESConfig struct {
+	// SenderAddress is the default address that emails are sent from.
 	SenderAddress string `bson:"sender_address" json:"sender_address" yaml:"sender_address"`
+	// AWSKey is the key to use when connecting with AWS.
+	AWSKey string `bson:"aws_key" json:"aws_key" yaml:"aws_key"`
+	// AWSSecret is the secret to use when connecting with AWS.
+	AWSSecret string `bson:"aws_secret" json:"aws_secret" yaml:"aws_secret"`
+	// AWSRegion is the region to use when connecting with AWS.
+	AWSRegion string `bson:"aws_region" json:"aws_region" yaml:"aws_region"`
+}
+
+func (c *SESConfig) validate() error {
+	catcher := grip.NewBasicCatcher()
+
+	if c.SenderAddress == "" {
+		catcher.New("must provide sender address")
+	}
+	if c.AWSKey == "" {
+		catcher.New("must provide AWS key")
+	}
+	if c.AWSSecret == "" {
+		catcher.New("must provide AWS secret")
+	}
+
+	if c.AWSRegion == "" {
+		c.AWSRegion = DefaultEC2Region
+	}
+
+	return catcher.Resolve()
 }

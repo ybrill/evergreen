@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/evergreen-ci/certdepot"
 	"github.com/evergreen-ci/evergreen/util"
 	"github.com/evergreen-ci/gimlet"
@@ -698,9 +699,10 @@ func (e *envState) initSenders(ctx context.Context) error {
 		Threshold: level.Notice,
 	}
 
-	if e.settings.Notify.SES.SenderAddress != "" {
+	if e.settings.Notify.SES.validate() == nil {
 		config, err := config.LoadDefaultConfig(ctx,
-			config.WithRegion(DefaultEC2Region),
+			config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(e.settings.Notify.SES.AWSKey, e.settings.Notify.SES.AWSSecret, "")),
+			config.WithRegion(e.settings.Notify.SES.AWSRegion),
 		)
 		if err != nil {
 			return errors.Wrap(err, "loading AWS config")
