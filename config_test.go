@@ -589,27 +589,69 @@ func (s *AdminSuite) TestKeyValPairsToMap() {
 }
 
 func (s *AdminSuite) TestNotifyConfig() {
-	config := NotifyConfig{
-		SES: SESConfig{
-			SenderAddress: "from",
-		},
-	}
+	s.Run("SetConfig", func() {
+		config := NotifyConfig{
+			SES: SESConfig{
+				SenderAddress: "from",
+				AWSKey:        "key",
+				AWSSecret:     "secret",
+				AWSRegion:     DefaultEC2Region,
+			},
+		}
 
-	err := config.Set()
-	s.NoError(err)
-	settings, err := GetConfig()
-	s.NoError(err)
-	s.NotNil(settings)
-	s.Equal(config, settings.Notify)
+		err := config.Set()
+		s.NoError(err)
+		settings, err := GetConfig()
+		s.NoError(err)
+		s.NotNil(settings)
+		s.Equal(config, settings.Notify)
 
-	config.BufferIntervalSeconds = 1
-	config.BufferTargetPerInterval = 2
-	s.NoError(config.Set())
+		config.BufferIntervalSeconds = 1
+		config.BufferTargetPerInterval = 2
+		s.NoError(config.Set())
 
-	settings, err = GetConfig()
-	s.NoError(err)
-	s.NotNil(settings)
-	s.Equal(config, settings.Notify)
+		settings, err = GetConfig()
+		s.NoError(err)
+		s.NotNil(settings)
+		s.Equal(config, settings.Notify)
+	})
+
+	s.Run("SESConfigValidate", func() {
+		for desc, testCase := range map[string]struct {
+			config SESConfig
+			valid  bool
+		}{
+			"EmptyConfig": {
+				config: SESConfig{},
+				valid:  false,
+			},
+			"MissingKey": {
+				config: SESConfig{
+					AWSSecret: "secret",
+					AWSRegion: DefaultEC2Region,
+				},
+				valid: false,
+			},
+			"MissingSecret": {
+				config: SESConfig{
+					AWSKey:    "key",
+					AWSRegion: DefaultEC2Region,
+				},
+				valid: false,
+			},
+			"MissingRegion": {
+				config: SESConfig{
+					AWSKey:    "key",
+					AWSSecret: "secret",
+				},
+				valid: true,
+			},
+		} {
+			s.Run(desc, func() {
+				s.Equal(testCase.valid, testCase.config.validate() == nil)
+			})
+		}
+	})
 }
 
 func (s *AdminSuite) TestContainerPoolsConfig() {
