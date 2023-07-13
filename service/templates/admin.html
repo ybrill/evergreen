@@ -550,8 +550,20 @@ Admin Settings
 								</md-card-title>
 								<md-card-content>
 									<md-input-container class="control" style="width:45%;">
-										<label>From email</label>
+										<label>Sender Address</label>
 										<input type="text" ng-model="Settings.notify.ses.sender_address">
+									</md-input-container>
+									<md-input-container class="control" style="width:45%;">
+										<label>AWS Key</label>
+										<input type="text" ng-model="Settings.notify.ses.aws_key">
+									</md-input-container>
+									<md-input-container class="control" style="width:45%;">
+										<label>AWS Secret</label>
+										<input type="text" ng-model="Settings.notify.ses.aws_secret">
+									</md-input-container>
+									<md-input-container class="control" style="width:45%;">
+										<label>AWS Region</label>
+										<input type="text" ng-model="Settings.notify.ses.aws_region">
 									</md-input-container>
 								</md-card-content>
 							</md-card>
