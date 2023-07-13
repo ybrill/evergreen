@@ -75,11 +75,17 @@ func (s *AdminEventSuite) TestEventLogging3() {
 	before := evergreen.NotifyConfig{
 		SES: evergreen.SESConfig{
 			SenderAddress: "evergreen@mongodb.com",
+			AWSKey:        "key",
+			AWSSecret:     "secret",
+			AWSRegion:     "us-east-1",
 		},
 	}
 	after := evergreen.NotifyConfig{
 		SES: evergreen.SESConfig{
 			SenderAddress: "evergreen2@mongodb.com",
+			AWSKey:        "new-key",
+			AWSSecret:     "new-secret",
+			AWSRegion:     "us-east-2",
 		},
 	}
 	s.NoError(LogAdminEvent(before.SectionId(), &before, &after, s.username))
@@ -91,7 +97,14 @@ func (s *AdminEventSuite) TestEventLogging3() {
 	beforeVal := eventData.Changes.Before.(*evergreen.NotifyConfig)
 	afterVal := eventData.Changes.After.(*evergreen.NotifyConfig)
 	s.Equal(before.SES.SenderAddress, beforeVal.SES.SenderAddress)
+	s.Equal(before.SES.AWSKey, beforeVal.SES.AWSKey)
+	s.Equal(before.SES.AWSSecret, beforeVal.SES.AWSSecret)
+	s.Equal(before.SES.AWSRegion, beforeVal.SES.AWSRegion)
+
 	s.Equal(after.SES.SenderAddress, afterVal.SES.SenderAddress)
+	s.Equal(after.SES.AWSKey, afterVal.SES.AWSKey)
+	s.Equal(after.SES.AWSSecret, afterVal.SES.AWSSecret)
+	s.Equal(after.SES.AWSRegion, afterVal.SES.AWSRegion)
 }
 
 func (s *AdminEventSuite) TestNoSpuriousLogging() {

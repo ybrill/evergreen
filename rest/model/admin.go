@@ -282,12 +282,18 @@ func (as *APIAdminSettings) ToService() (interface{}, error) {
 
 type APISESConfig struct {
 	SenderAddress *string `json:"sender_address"`
+	AWSKey        *string `json:"aws_key"`
+	AWSSecret     *string `json:"aws_secret"`
+	AWSRegion     *string `json:"aws_region"`
 }
 
 func (a *APISESConfig) BuildFromService(h interface{}) error {
 	switch v := h.(type) {
 	case evergreen.SESConfig:
 		a.SenderAddress = utility.ToStringPtr(v.SenderAddress)
+		a.AWSKey = utility.ToStringPtr(v.AWSKey)
+		a.AWSSecret = utility.ToStringPtr(v.AWSSecret)
+		a.AWSRegion = utility.ToStringPtr(v.AWSRegion)
 	default:
 		return errors.Errorf("programmatic error: expected SESConfig but got type %T", h)
 	}
@@ -300,6 +306,9 @@ func (a *APISESConfig) ToService() (interface{}, error) {
 	}
 	config := evergreen.SESConfig{
 		SenderAddress: utility.FromStringPtr(a.SenderAddress),
+		AWSKey:        utility.FromStringPtr(a.AWSKey),
+		AWSSecret:     utility.FromStringPtr(a.AWSSecret),
+		AWSRegion:     utility.FromStringPtr(a.AWSRegion),
 	}
 	return config, nil
 }

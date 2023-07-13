@@ -142,6 +142,9 @@ func (s *AdminDataSuite) TestSetAndGetSettings() {
 	s.EqualValues(testSettings.LoggerConfig.Buffer.IncomingBufferFactor, settingsFromConnector.LoggerConfig.Buffer.IncomingBufferFactor)
 	s.EqualValues(testSettings.LoggerConfig.Buffer.UseAsync, settingsFromConnector.LoggerConfig.Buffer.UseAsync)
 	s.EqualValues(testSettings.Notify.SES.SenderAddress, settingsFromConnector.Notify.SES.SenderAddress)
+	s.EqualValues(testSettings.Notify.SES.AWSKey, settingsFromConnector.Notify.SES.AWSKey)
+	s.EqualValues(testSettings.Notify.SES.AWSSecret, settingsFromConnector.Notify.SES.AWSSecret)
+	s.EqualValues(testSettings.Notify.SES.AWSRegion, settingsFromConnector.Notify.SES.AWSRegion)
 	s.Equal(len(testSettings.Providers.AWS.EC2Keys), len(settingsFromConnector.Providers.AWS.EC2Keys))
 	s.Equal(testSettings.Providers.AWS.ParserProject.Key, settingsFromConnector.Providers.AWS.ParserProject.Key)
 	s.Equal(testSettings.Providers.AWS.ParserProject.Secret, settingsFromConnector.Providers.AWS.ParserProject.Secret)
@@ -181,6 +184,9 @@ func (s *AdminDataSuite) TestSetAndGetSettings() {
 		case *evergreen.NotifyConfig:
 			foundNotifyEvent = true
 			s.Equal(testSettings.Notify.SES.SenderAddress, v.SES.SenderAddress)
+			s.Equal(testSettings.Notify.SES.AWSKey, v.SES.AWSKey)
+			s.Equal(testSettings.Notify.SES.AWSSecret, v.SES.AWSSecret)
+			s.Equal(testSettings.Notify.SES.AWSRegion, v.SES.AWSRegion)
 		case *evergreen.ServiceFlags:
 			foundFlagsEvent = true
 			s.Equal(testSettings.ServiceFlags.RepotrackerDisabled, v.RepotrackerDisabled)
@@ -266,6 +272,9 @@ func (s *AdminDataSuite) TestSetAndGetSettings() {
 	s.EqualValues(testSettings.LoggerConfig.Buffer.IncomingBufferFactor, settingsFromConnector.LoggerConfig.Buffer.IncomingBufferFactor)
 	s.EqualValues(testSettings.LoggerConfig.Buffer.UseAsync, settingsFromConnector.LoggerConfig.Buffer.UseAsync)
 	s.EqualValues(testSettings.Notify.SES.SenderAddress, settingsFromConnector.Notify.SES.SenderAddress)
+	s.EqualValues(testSettings.Notify.SES.AWSKey, settingsFromConnector.Notify.SES.AWSKey)
+	s.EqualValues(testSettings.Notify.SES.AWSSecret, settingsFromConnector.Notify.SES.AWSSecret)
+	s.EqualValues(testSettings.Notify.SES.AWSRegion, settingsFromConnector.Notify.SES.AWSRegion)
 	s.Equal(len(testSettings.Providers.AWS.EC2Keys), len(settingsFromConnector.Providers.AWS.EC2Keys))
 	s.Equal(testSettings.Providers.AWS.ParserProject.Key, settingsFromConnector.Providers.AWS.ParserProject.Key)
 	s.Equal(testSettings.Providers.AWS.ParserProject.Secret, settingsFromConnector.Providers.AWS.ParserProject.Secret)

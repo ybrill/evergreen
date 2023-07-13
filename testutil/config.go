@@ -244,6 +244,9 @@ func MockConfig() *evergreen.Settings {
 		Notify: evergreen.NotifyConfig{
 			SES: evergreen.SESConfig{
 				SenderAddress: "from",
+				AWSKey:        "key",
+				AWSSecret:     "secret",
+				AWSRegion:     evergreen.DefaultEC2Region,
 			},
 		},
 		Plugins: map[string]map[string]interface{}{"k4": {"k5": "v5"}},
